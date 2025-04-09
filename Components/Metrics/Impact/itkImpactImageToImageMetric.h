@@ -260,13 +260,29 @@ public:
   /** Set/Get the list of TorchScript model configurations used to extract features from the fixed image.
    * Each model can target a different resolution, architecture, or semantic level.
    */
-  itkSetMacro(FixedModelsConfiguration, std::vector<ModelConfiguration>);
+  void
+  SetFixedModelsConfiguration(std::vector<ModelConfiguration> arg)
+  {
+    if (m_FixedModelsConfiguration != arg)
+    {
+      m_FixedModelsConfiguration = std::move(arg);
+      this->Modified();
+    }
+  }
   itkGetConstMacro(FixedModelsConfiguration, std::vector<ModelConfiguration>);
 
   /** Set/Get the list of TorchScript model configurations used to extract features from the moving image.
    * Allows using different models for fixed and moving images to support asymmetric or multimodal setups.
    */
-  itkSetMacro(MovingModelsConfiguration, std::vector<ModelConfiguration>);
+  void
+  SetMovingModelsConfiguration(std::vector<ModelConfiguration> arg)
+  {
+    if (m_MovingModelsConfiguration != arg)
+    {
+      m_MovingModelsConfiguration = std::move(arg);
+      this->Modified();
+    }
+  }
   itkGetConstMacro(MovingModelsConfiguration, std::vector<ModelConfiguration>);
 
   /** Set/Get the subset of feature indices to be used in the loss computation.
