@@ -6,6 +6,10 @@
 #include <sstream>
 #include "itkParameterMapInterface.h"
 
+using elx::formatParameterStringByDimensionAndLevel;
+using elx::GetBooleanVectorFromString;
+using elx::GetVectorFromString;
+using elx::groupStrByDimensions;
 
 namespace
 {

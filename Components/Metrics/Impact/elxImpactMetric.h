@@ -261,8 +261,6 @@ private:
   GenerateModelsConfiguration(unsigned int level, std::string type, std::string mode, unsigned int imageDimension);
 };
 
-} // end namespace elastix
-
 /**
  * \brief Convert a string token to a typed value with bounds checking.
  *
@@ -605,6 +603,8 @@ formatParameterStringByDimensionAndLevel(const TConfiguration * config,
 
   return paramStream.str();
 } // end formatParameterStringByDimensionAndLevel
+
+} // end namespace elastix
 
 
 #ifndef ITK_MANUAL_INSTANTIATION
