@@ -6,6 +6,9 @@
 #include <sstream>
 #include "itkParameterMapInterface.h"
 
+
+namespace
+{
 // Helper to format vector outputs
 template <typename T>
 std::string
@@ -25,6 +28,7 @@ ExpectVectorEqual(const std::vector<T> & actual, const std::vector<T> & expected
 {
   EXPECT_EQ(actual, expected) << "Expected: " << vecToStr(expected) << "\nActual:   " << vecToStr(actual);
 }
+} // namespace
 
 
 GTEST_TEST(GetVectorFromString, LimitsAndParsing)
