@@ -180,10 +180,10 @@ public:
   {
     return m_layersMask;
   }
-  const std::shared_ptr<torch::jit::script::Module> &
+  torch::jit::script::Module &
   GetModel() const
   {
-    return m_model;
+    return *m_model;
   }
   const std::vector<std::vector<float>> &
   GetPatchIndex() const

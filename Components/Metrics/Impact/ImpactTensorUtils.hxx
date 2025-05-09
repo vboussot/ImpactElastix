@@ -380,7 +380,7 @@ GetFeaturesMaps(
                                          .repeat({ torch::IntArrayRef(channelRepeat) })
                                          .unsqueeze(0)
                                          .to(device);
-            std::vector<torch::jit::IValue> outputsPatch = config.GetModel()->forward({ inputPatch }).toList().vec();
+            std::vector<torch::jit::IValue> outputsPatch = config.GetModel().forward({ inputPatch }).toList().vec();
 
 
             if (config.GetLayersMask().size() != outputsPatch.size())
@@ -455,7 +455,7 @@ GetFeaturesMaps(
                                        .unsqueeze(0)
                                        .to(device);
 
-          std::vector<torch::jit::IValue> outputsPatch = config.GetModel()->forward({ inputPatch }).toList().vec();
+          std::vector<torch::jit::IValue> outputsPatch = config.GetModel().forward({ inputPatch }).toList().vec();
 
           if (config.GetLayersMask().size() != outputsPatch.size())
           {
@@ -564,7 +564,7 @@ GetModelOutputsExample(std::vector<itk::ImpactModelConfiguration> & modelsConfig
                           .to(device);
       try
       {
-        outputsList = config.GetModel()->forward({ modelInput }).toList().vec();
+        outputsList = config.GetModel().forward({ modelInput }).toList().vec();
       }
       catch (const std::exception & e)
       {
@@ -730,7 +730,7 @@ GenerateOutputs(const std::vector<itk::ImpactModelConfiguration> &              
       resizeVector[1] = config.GetNumberOfChannels();
       std::vector<torch::jit::IValue> outputsList =
         config.GetModel()
-          ->forward({ patchValueTensor.to(device).repeat({ torch::IntArrayRef(resizeVector) }).clone() })
+          .forward({ patchValueTensor.to(device).repeat({ torch::IntArrayRef(resizeVector) }).clone() })
           .toList()
           .vec();
 
@@ -800,7 +800,7 @@ GenerateOutputsAndJacobian(const std::vector<itk::ImpactModelConfiguration> &   
       patchValueTensor.to(device).repeat({ torch::IntArrayRef(resizeVector) }).clone().set_requires_grad(true);
     imagesPatchesJacobians = imagesPatchesJacobians.to(device).repeat({ 1, config.GetNumberOfChannels(), 1 }).clone();
 
-    std::vector<torch::jit::IValue> outputsList = config.GetModel()->forward({ patchValueTensor }).toList().vec();
+    std::vector<torch::jit::IValue> outputsList = config.GetModel().forward({ patchValueTensor }).toList().vec();
     torch::Tensor                   layer, diffLayer, modelJacobian;
     for (int it = 0; it < outputsList.size(); ++it)
     {
