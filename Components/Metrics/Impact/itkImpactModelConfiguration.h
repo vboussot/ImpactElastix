@@ -118,6 +118,19 @@ public:
     }
   }
 
+  // Disable (delete) copying, to avoid having multiple copies of the same model:
+  ImpactModelConfiguration(const ImpactModelConfiguration &) = delete;
+  ImpactModelConfiguration &
+  operator=(const ImpactModelConfiguration &) = delete;
+
+  // Enable (default) move semantics:
+  ImpactModelConfiguration(ImpactModelConfiguration &&) = default;
+  ImpactModelConfiguration &
+  operator=(ImpactModelConfiguration &&) = default;
+
+  // Destructor.
+  ~ImpactModelConfiguration() = default;
+
   bool
   operator==(const ImpactModelConfiguration & rhs) const
   {

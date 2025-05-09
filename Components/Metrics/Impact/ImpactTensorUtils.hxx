@@ -625,7 +625,9 @@ GetModelOutputsExample(std::vector<itk::ImpactModelConfiguration> & modelsConfig
  * ******************* GetPatchIndex ***********************
  */
 inline std::vector<std::vector<float>>
-GetPatchIndex(itk::ImpactModelConfiguration modelConfiguration, std::mt19937 & randomGenerator, unsigned int dimension)
+GetPatchIndex(const itk::ImpactModelConfiguration & modelConfiguration,
+              std::mt19937 &                        randomGenerator,
+              unsigned int                          dimension)
 {
   if (dimension == modelConfiguration.GetPatchSize().size())
   {
