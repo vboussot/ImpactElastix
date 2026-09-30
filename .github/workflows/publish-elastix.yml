@@ -5,7 +5,7 @@ on:
     inputs:
       itkimpact_ref:
         description: "ITKIMPACT commit, branch or tag the IMPACT metric is built against"
-        default: "d9440a4f2fb5119f81c161a64bd5955a9c6e594f"
+        default: "d7587f597e6794ca3ebdf2280d1e5a4bb6a8e2a7"
 
 env:
   DEFAULT_ITK_GIT_TAG: "v5.4.6"
