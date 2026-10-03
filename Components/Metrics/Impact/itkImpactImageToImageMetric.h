@@ -722,12 +722,12 @@ private:
   std::vector<ImpactModelConfiguration> m_FixedModelsConfiguration;
   std::vector<ImpactModelConfiguration> m_MovingModelsConfiguration;
 
-  std::vector<unsigned int> m_SubsetFeatures;
-  std::vector<unsigned int> m_PCA;
-  std::vector<float>        m_LayersWeight;
-  std::vector<std::string>  m_Distance;
-  int                       m_FeaturesMapUpdateInterval;
-  std::string               m_Mode;
+  std::vector<unsigned int>              m_SubsetFeatures;
+  std::vector<unsigned int>              m_PCA;
+  std::vector<float>                     m_LayersWeight;
+  std::vector<std::string>               m_Distance;
+  int                                    m_FeaturesMapUpdateInterval;
+  std::string                            m_Mode;
   bool                                   m_NormalizeLosses{ true };
   typename FixedImageType::ConstPointer  m_ImpactFixedImage;
   typename MovingImageType::ConstPointer m_ImpactMovingImage;
@@ -744,12 +744,12 @@ private:
   }
   /** Latched at the first evaluation after Initialize(); mutable because the evaluation is const. */
   mutable itk::Impact::LossNormalization m_LossNormalization;
-  bool                      m_WriteFeatureMaps;
-  std::string               m_FeatureMapsPath;
-  torch::Device             m_Device = torch::Device(torch::kCPU);
-  bool                      m_UseMixedPrecision;
-  unsigned int              m_CurrentLevel;
-  unsigned int              m_Seed;
+  bool                                   m_WriteFeatureMaps;
+  std::string                            m_FeatureMapsPath;
+  torch::Device                          m_Device = torch::Device(torch::kCPU);
+  bool                                   m_UseMixedPrecision;
+  unsigned int                           m_CurrentLevel;
+  unsigned int                           m_Seed;
 
 
   std::vector<FeaturesMaps>  m_FixedFeaturesMaps;
