@@ -240,8 +240,8 @@ public:
   itkSetMacro(CurrentLevel, unsigned int);
   itkGetConstMacro(CurrentLevel, unsigned int);
 
-  /** Set/Get the manual seed
-   */
+  /** Set/Get the seed of the metric's random draws (the feature subsets, the plane of a 2D model's patch).
+   * elx::ImpactMetric sets it from the RandomSeed parameter, as elastix seeds its own generator. */
   itkSetMacro(Seed, unsigned int);
   itkGetConstMacro(Seed, unsigned int);
 
@@ -286,14 +286,7 @@ protected:
     void
     init(std::vector<std::string> distanceName, std::vector<float> layersWeight, unsigned int seed)
     {
-      if (seed > 0)
-      {
-        m_RandomGenerator = std::mt19937(seed);
-      }
-      else
-      {
-        m_RandomGenerator = std::mt19937(time(nullptr));
-      }
+      m_RandomGenerator = std::mt19937(seed);
       m_LayersWeight = layersWeight;
       for (std::string name : distanceName)
       {

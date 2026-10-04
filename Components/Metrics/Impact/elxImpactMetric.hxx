@@ -253,7 +253,8 @@ ImpactMetric<TElastix>::BeforeEachResolution()
   unsigned int level = (this->m_Registration->GetAsITKBaseType())->GetCurrentLevel();
   this->SetCurrentLevel(level);
 
-  unsigned int randomSeed = 0;
+  /** The seed elastix gives its own generator: RandomSeed, 121212 by default (elx::ElastixBase). */
+  unsigned int randomSeed = 121212;
   configuration.ReadParameter(randomSeed, "RandomSeed", 0, false);
   this->SetSeed(randomSeed);
 
