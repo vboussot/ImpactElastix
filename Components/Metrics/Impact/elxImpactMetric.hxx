@@ -263,10 +263,6 @@ ImpactMetric<TElastix>::BeforeEachResolution()
   unsigned int level = (this->m_Registration->GetAsITKBaseType())->GetCurrentLevel();
   this->SetCurrentLevel(level);
 
-  unsigned int randomSeed = 0;
-  configuration.ReadParameter(randomSeed, "RandomSeed", 0, false);
-  this->SetSeed(randomSeed);
-
   // IMPACT resamples the images itself to each model's voxel size: it reads them as given, not the level of the
   // image pyramid the other metrics share (a multi-metric registration with mutual information keeps its pyramid).
   this->SetImpactFixedImage(this->GetElastix()->GetFixedImage());

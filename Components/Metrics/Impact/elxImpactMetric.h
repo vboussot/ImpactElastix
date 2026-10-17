@@ -87,7 +87,8 @@ namespace elastix
  *   - `"Static"`: Features are computed once per image and resolution level.
  *   - `"Jacobian"`: Features are computed at each iteration with backpropagation through the model.
  *
- * \param ImpactSubsetFeatures Number of feature channels randomly selected per voxel at each iteration.
+ * \param ImpactSubsetFeatures Number of feature channels compared, drawn anew with the samples at each iteration,
+ *   from elastix's generator (RandomSeed).
  *
  * \param ImpactLayersWeight The relative importance of each layer in the similarity score.
  *
