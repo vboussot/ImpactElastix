@@ -347,7 +347,10 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::GeneratePatchIndex(
 
   std::vector<ImagePointType> fixedPoints;
 
-  std::vector<bool> pointsMask(fixedPointsTmp.size(), true);
+  /** The plane is a function of the point, drawn from RandomSeed as elastix's generator holds it, not from that
+   * generator's stream: every thread, and itk-impact's hosts, cut the same plane for the same point. */
+  const unsigned int seed = this->GetMutableRandomVariateGenerator().GetSeed();
+  std::vector<bool>  pointsMask(fixedPointsTmp.size(), true);
   for (int i = 0; i < modelConfig.size(); ++i)
   {
     patchIndex[i] = std::vector<std::vector<std::vector<float>>>();
@@ -355,7 +358,7 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::GeneratePatchIndex(
     {
       std::vector<std::vector<float>> patch =
         itk::Impact::GetPatchIndex(modelConfig[i],
-                                   GetSeed(),
+                                   seed,
                                    i,
                                    this->ImpactFixedImage()->TransformPhysicalPointToIndex(fixedPointsTmp[it]),
                                    FixedImageDimension);
@@ -429,21 +432,41 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::EvaluateMovingImagesPatchVa
     .unsqueeze(0);
 } // end EvaluateFixedPatchValue
 
+/**
+ * ******************* BeforeThreadedGetValueAndDerivative *******************
+ */
 template <typename TFixedImage, typename TMovingImage>
-std::vector<unsigned int>
-ImpactImageToImageMetric<TFixedImage, TMovingImage>::GetSubsetOfFeatures(
-  const std::vector<unsigned int> & featuresIndex,
-  std::mt19937 &                    randomGenerator,
-  int                               n) const
+void
+ImpactImageToImageMetric<TFixedImage, TMovingImage>::BeforeThreadedGetValueAndDerivative(
+  const ParametersType & parameters) const
 {
-  if (featuresIndex.size() == static_cast<size_t>(n))
-    return featuresIndex;
+  Superclass::BeforeThreadedGetValueAndDerivative(parameters);
 
-  std::vector<unsigned int> shuffled = featuresIndex;
-  std::shuffle(shuffled.begin(), shuffled.end(), randomGenerator);
-  shuffled.resize(n);
-  return shuffled;
-}
+  /** Draw where the superclass draws the samples: a multi-metric registration calls this once with
+   * UseMetricSingleThreaded on, then again, from GetValueAndDerivative, with it off. */
+  if (!this->GetUseMetricSingleThreaded())
+  {
+    return;
+  }
+  auto & randomVariateGenerator = this->GetMutableRandomVariateGenerator();
+  m_SubsetsOfFeatures = m_FeaturesIndexes;
+  for (unsigned int i = 0; i < m_SubsetsOfFeatures.size(); ++i)
+  {
+    std::vector<unsigned int> & subset = m_SubsetsOfFeatures[i];
+    const unsigned int          n = GetSubsetFeatures()[i];
+    if (n == subset.size())
+    {
+      continue;
+    }
+    /** The first n steps of a Fisher-Yates shuffle. */
+    for (unsigned int k = 0; k < n; ++k)
+    {
+      const auto last = static_cast<unsigned int>(subset.size() - 1 - k);
+      std::swap(subset[k], subset[k + randomVariateGenerator.GetIntegerVariate(last)]);
+    }
+    subset.resize(n);
+  }
+} // end BeforeThreadedGetValueAndDerivative
 
 /**
  * ******************* EvaluateMovingPatchValueAndDerivative *******************
@@ -510,8 +533,7 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::ComputeValue(
 
   for (int i = 0; i < m_FeaturesIndexes.size(); ++i)
   {
-    std::vector<unsigned int> subsetOfFeatures =
-      GetSubsetOfFeatures(m_FeaturesIndexes[i], loss.m_RandomGenerator, GetSubsetFeatures()[i]);
+    std::vector<unsigned int> subsetOfFeatures = m_SubsetsOfFeatures[i];
     subsetsOfFeatures[i] =
       torch::from_blob(subsetOfFeatures.data(), { static_cast<long>(subsetOfFeatures.size()) }, torch::kUInt32)
         .to(torch::kInt64) // an index: torch refuses unsigned ones
@@ -580,8 +602,7 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::ComputeValueStatic(
   unsigned int numberOfSample = fixedPoints.size();
   for (int i = 0; i < m_FixedFeaturesMaps.size(); ++i)
   {
-    std::vector<unsigned int> subsetOfFeatures =
-      GetSubsetOfFeatures(m_FeaturesIndexes[i], loss.m_RandomGenerator, GetSubsetFeatures()[i]);
+    std::vector<unsigned int> subsetOfFeatures = m_SubsetsOfFeatures[i];
 
     torch::Tensor fixedOutputTensor = torch::zeros({ numberOfSample, GetSubsetFeatures()[i] });
     torch::Tensor movingOutputTensor = torch::zeros({ numberOfSample, GetSubsetFeatures()[i] });
@@ -644,8 +665,7 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::ComputeValueAndDerivativeJa
 
   for (int i = 0; i < m_FeaturesIndexes.size(); ++i)
   {
-    std::vector<unsigned int> subsetOfFeatures =
-      GetSubsetOfFeatures(m_FeaturesIndexes[i], loss.m_RandomGenerator, GetSubsetFeatures()[i]);
+    std::vector<unsigned int> subsetOfFeatures = m_SubsetsOfFeatures[i];
     subsetsOfFeatures[i] =
       torch::from_blob(subsetOfFeatures.data(), { static_cast<long>(subsetOfFeatures.size()) }, torch::kUInt32)
         .to(torch::kInt64)
@@ -742,8 +762,7 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::ComputeValueAndDerivativeSt
 
   for (int i = 0; i < m_FixedFeaturesMaps.size(); ++i)
   {
-    std::vector<unsigned int> subsetOfFeatures =
-      GetSubsetOfFeatures(m_FeaturesIndexes[i], loss.m_RandomGenerator, GetSubsetFeatures()[i]);
+    std::vector<unsigned int> subsetOfFeatures = m_SubsetsOfFeatures[i];
 
     MovingImagePointType mappedPoint;
     torch::Tensor        fixedOutputTensor = torch::zeros({ numberOfSample, GetSubsetFeatures()[i] }, torch::kFloat32);
@@ -779,7 +798,7 @@ ImpactImageToImageMetric<TFixedImage, TMovingImage>::InitializeThreadingParamete
   m_LossThreadStruct.reset(new AlignedLossPerThreadStruct[numberOfThreads]);
   for (ThreadIdType i = 0; i < numberOfThreads; ++i)
   {
-    m_LossThreadStruct[i].init(GetDistance(), GetLayersWeight(), GetSeed());
+    m_LossThreadStruct[i].init(GetDistance(), GetLayersWeight());
   }
   m_LossThreadStructSize = numberOfThreads;
 

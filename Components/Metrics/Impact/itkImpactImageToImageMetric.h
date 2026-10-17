@@ -37,7 +37,6 @@
 
 #include <string>
 #include <vector>
-#include <random>
 
 namespace itk
 {
@@ -168,6 +167,12 @@ public:
   void
   Initialize() override;
 
+  /** Draws, with the samples, the feature channels that every point of this evaluation compares
+   * (ImpactSubsetFeatures). They come from elastix's generator, which RandomSeed seeds, and are drawn here, outside
+   * the threads, so that they do not depend on the number of threads. */
+  void
+  BeforeThreadedGetValueAndDerivative(const ParametersType & parameters) const override;
+
   /** Set/Get the list of TorchScript model configurations used to extract features from the fixed image.
    * Each model can target a different resolution, architecture, or semantic level.
    */
@@ -241,11 +246,6 @@ public:
   itkSetMacro(CurrentLevel, unsigned int);
   itkGetConstMacro(CurrentLevel, unsigned int);
 
-  /** Set/Get the manual seed
-   */
-  itkSetMacro(Seed, unsigned int);
-  itkGetConstMacro(Seed, unsigned int);
-
   /** Set/Get how often (in number of optimizer iterations) the feature maps should be updated.
    * A value of 0 disables updates (useful in static mode). Positive values enable periodic refreshes.
    */
@@ -294,19 +294,10 @@ protected:
     std::vector<float>                              m_LayersWeight;
     SizeValueType                                   m_NumberOfPixelsCounted;
     int                                             m_NumberOfParameters;
-    std::mt19937                                    m_RandomGenerator;
 
     void
-    init(std::vector<std::string> distanceName, std::vector<float> layersWeight, unsigned int seed)
+    init(std::vector<std::string> distanceName, std::vector<float> layersWeight)
     {
-      if (seed > 0)
-      {
-        m_RandomGenerator = std::mt19937(seed);
-      }
-      else
-      {
-        m_RandomGenerator = std::mt19937(time(nullptr));
-      }
       m_LayersWeight = layersWeight;
       for (std::string name : distanceName)
       {
@@ -702,7 +693,7 @@ private:
    * for each point. It filters out points that lie outside the mask or image boundaries, returning
    * only the valid fixed points. The valid patch indices are stored in `patchIndex`.
    *
-   * A 2D model's patch lies on a plane drawn for each point from the metric's seed, the model and the point's index in
+   * A 2D model's patch lies on a plane drawn for each point from RandomSeed, the model and the point's index in
    * the fixed image IMPACT samples its patches in (itk::Impact::GetPatchIndex), the plane itk-impact's ITKv4 metric
    * and ImpactFineRegistration draw there.
    *
@@ -749,7 +740,6 @@ private:
   torch::Device                          m_Device = torch::Device(torch::kCPU);
   bool                                   m_UseMixedPrecision;
   unsigned int                           m_CurrentLevel;
-  unsigned int                           m_Seed;
 
 
   std::vector<FeaturesMaps>  m_FixedFeaturesMaps;
@@ -757,6 +747,8 @@ private:
   std::vector<torch::Tensor> m_PrincipalComponents;
 
   std::vector<std::vector<unsigned int>> m_FeaturesIndexes;
+  /** The channels this evaluation compares, per layer (BeforeThreadedGetValueAndDerivative). */
+  mutable std::vector<std::vector<unsigned int>> m_SubsetsOfFeatures;
 
 
   /**
@@ -768,22 +760,6 @@ private:
     interpolator->SetSplineOrder(3);
     return interpolator;
   }();
-
-  /**
-   * \brief Retrieves a subset of features based on the provided indices.
-   *
-   * This method selects a subset of features from the full set of features, based on the indices
-   * provided in `featuresIndex`. It uses a random number generator for sampling a subset of the
-   * features, ensuring that the selected features are randomly chosen.
-   *
-   * \param featuresIndex A vector of indices representing the features to be considered.
-   * \param randomGenerator A random number generator used for sampling the features.
-   * \param n The number of features to select from the provided list of indices.
-   *
-   * \return A vector containing the indices of the randomly selected features.
-   */
-  std::vector<unsigned int>
-  GetSubsetOfFeatures(const std::vector<unsigned int> & featuresIndex, std::mt19937 & randomGenerator, int n) const;
 
   /** Thread-safe wrapper for per-thread loss computation (padded to avoid false sharing). */
   itkPadStruct(ITK_CACHE_LINE_ALIGNMENT, LossPerThreadStruct, PaddedLossPerThreadStruct);

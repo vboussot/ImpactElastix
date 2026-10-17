@@ -1090,6 +1090,24 @@ if(USE_ImpactMetric)
     -a 0.05)
   set_tests_properties(elastix_run_2DBrain.IMPACT.translation.ASGD.003_COMPARE_TP
     PROPERTIES DEPENDS elastix_run_2DBrain.IMPACT.translation.ASGD.003_OUTPUT)
+
+  # The same registration, comparing 2 of the 4 feature channels and without RandomSeed, run twice: the channels are
+  # drawn from elastix's generator, which RandomSeed seeds (121212 by default), so the two runs agree exactly.
+  foreach(run a b)
+    elx_add_run_test(2DBrain.IMPACT.translation.ASGD.004.${run}
+      ""
+      -f ${ELASTIX_DOX_DIR}/exampleinput/fixed.mhd
+      -m ${ELASTIX_DOX_DIR}/exampleinput/fixed.mhd
+      -t0 ${TestDataDir}/transformparameters.2D.translation.txt
+      -p ${TestDataDir}/parameters.2D.IMPACT.translation.ASGD.004.txt)
+  endforeach()
+  add_test(NAME elastix_run_2DBrain.IMPACT.translation.ASGD.004_COMPARE_RUNS
+    COMMAND elxTransformParametersCompare
+    -base ${TestOutputDir}/elastix_run_2DBrain.IMPACT.translation.ASGD.004.a/TransformParameters.0.txt
+    -test ${TestOutputDir}/elastix_run_2DBrain.IMPACT.translation.ASGD.004.b/TransformParameters.0.txt
+    -a 0)
+  set_tests_properties(elastix_run_2DBrain.IMPACT.translation.ASGD.004_COMPARE_RUNS
+    PROPERTIES DEPENDS "elastix_run_2DBrain.IMPACT.translation.ASGD.004.a_OUTPUT;elastix_run_2DBrain.IMPACT.translation.ASGD.004.b_OUTPUT")
 endif()
 
 add_subdirectory(PythonTests)

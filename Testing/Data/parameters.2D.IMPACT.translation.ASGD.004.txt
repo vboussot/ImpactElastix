@@ -1,0 +1,96 @@
+// The registration of parameters.2D.IMPACT.translation.ASGD.003.txt, comparing 2 of the 4 feature channels at
+// each iteration and without RandomSeed. The channels are drawn from elastix's generator, which RandomSeed seeds
+// (121212 when it is not given): two runs agree exactly.
+
+
+// ********** Image Types
+
+(FixedInternalImagePixelType "float")
+(FixedImageDimension 2)
+(MovingInternalImagePixelType "float")
+(MovingImageDimension 2)
+
+
+// ********** Components
+(Registration "MultiResolutionRegistration")
+(FixedImagePyramid "FixedGenericImagePyramid")
+(MovingImagePyramid "MovingGenericImagePyramid")
+(Interpolator "BSplineInterpolator")
+(Metric "Impact")
+(Optimizer "AdaptiveStochasticGradientDescent")
+(ResampleInterpolator "FinalBSplineInterpolator")
+(Resampler "DefaultResampler")
+(Transform "TranslationTransform")
+
+
+// ********** Pyramid
+
+(NumberOfResolutions 2)
+(ImagePyramidRescaleSchedule 1 1 1 1)
+(ImagePyramidSmoothingSchedule 0 0 0 0)
+
+
+// ********** Transform
+
+(HowToCombineTransforms "Compose")
+(AutomaticTransformInitialization "false")
+
+
+// ********** Optimizer
+
+(MaximumNumberOfIterations 100)
+(AutomaticParameterEstimation "true")
+(UseAdaptiveStepSizes "true")
+
+
+// ********** Metric
+
+(ImpactModelsPath0 "./R1D2_2D.pt")
+(ImpactDimension0 2)
+(ImpactNumberOfChannels0 1)
+(ImpactPatchSize0 0 0)
+(ImpactVoxelSize0 2 2)
+(ImpactLayersMask0 "1")
+(ImpactSubsetFeatures0 2)
+(ImpactLayersWeight0 1)
+(ImpactPCA0 0)
+(ImpactDistance0 "L1")
+
+(ImpactModelsPath1 "./R1D2_2D.pt")
+(ImpactDimension1 2)
+(ImpactNumberOfChannels1 1)
+(ImpactPatchSize1 0 0)
+(ImpactVoxelSize1 2 2)
+(ImpactLayersMask1 "1")
+(ImpactSubsetFeatures1 2)
+(ImpactLayersWeight1 1)
+(ImpactPCA1 0)
+(ImpactDistance1 "L1")
+
+(ImpactMode "Static")
+(ImpactGPU -1)
+(ImpactFeaturesMapUpdateInterval -1)
+
+
+// ********** Several
+
+(WriteTransformParametersEachIteration "false")
+(WriteTransformParametersEachResolution "true")
+(WriteResultImage "false")
+(UseDirectionCosines "true")
+
+
+// ********** ImageSampler
+
+(ImageSampler "RandomCoordinate")
+(NumberOfSpatialSamples 1000)
+(NewSamplesEveryIteration "true")
+(UseRandomSampleRegion "false")
+(MaximumNumberOfSamplingAttempts 8)
+
+
+// ********** Interpolator and Resampler
+
+(BSplineInterpolationOrder 1)
+(FinalBSplineInterpolationOrder 3)
+(DefaultPixelValue 0)
