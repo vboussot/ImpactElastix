@@ -22,6 +22,12 @@
 
 elxInstallMacro(ImpactMetric);
 
+#ifdef __EMSCRIPTEN__
+// The JavaScript calls of the browser build, defined in this object, which the component's installer links in: the
+// linker would leave out an object of their own, which nothing references.
+#  include "itkImpactJS.hxx"
+#endif
+
 /** Loaded as a plugin by an elastix that links ITK statically, this library holds its own copy of ITK, which does not
  * see the thread limits elastix set from -threads: elastix hands them over here, or the metric's threader would run
  * more work units than the metric allocated for. */

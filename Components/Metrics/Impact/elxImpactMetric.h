@@ -21,7 +21,11 @@
 
 #include "elxIncludes.h" // include first to avoid MSVS warning
 #include "elxConfiguration.h"
-#include "itkImpactImageToImageMetric.h"
+#ifdef __EMSCRIPTEN__
+#  include "itkImpactImageToImageMetricJS.h" // the models and distances run in the page, on konfai-impact
+#else
+#  include "itkImpactImageToImageMetric.h"
+#endif
 #include "itkVector.h"
 
 namespace elastix

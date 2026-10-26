@@ -25,8 +25,10 @@
 #include <sstream>
 #include <filesystem>
 #include <algorithm>
-#include <torch/csrc/jit/passes/tensorexpr_fuser.h>
-#include <torch/csrc/jit/runtime/profiling_graph_executor_impl.h>
+#ifndef __EMSCRIPTEN__
+#  include <torch/csrc/jit/passes/tensorexpr_fuser.h>
+#  include <torch/csrc/jit/runtime/profiling_graph_executor_impl.h>
+#endif
 
 namespace elastix
 {
@@ -47,10 +49,12 @@ ImpactMetric<TElastix>::BeforeRegistration()
   // runtime dependencies and non-deterministic behavior across resolutions.
   // We therefore disable profiling and TensorExpr fusion to keep a stable and
   // deterministic execution, while still running on CUDA.
+#ifndef __EMSCRIPTEN__
   torch::jit::setTensorExprFuserEnabled(false);
   torch::jit::getProfilingMode() = false;
   torch::jit::getExecutorMode() = false;
   torch::jit::setGraphExecutorOptimize(false);
+#endif
 }
 
 /**
@@ -238,11 +242,13 @@ ImpactMetric<TElastix>::GenerateModelsConfiguration(unsigned int level,
     {
       itkExceptionMacro(<< prefix << "FeatureNormalization" << level << ": " << e.what());
     }
+#ifndef __EMSCRIPTEN__
     catch (const c10::Error & e)
     {
       itkExceptionMacro("ERROR: the model are not loaded from this file: " << modelsPathVec[i]
                                                                            << ". Torch error message:" << e.what());
     }
+#endif
   }
   return modelsConfiguration;
 } // end GenerateModelsConfiguration
@@ -278,6 +284,10 @@ ImpactMetric<TElastix>::BeforeEachResolution()
   configuration.ReadParameter(device, "ImpactGPU", this->GetComponentLabel(), level, 0);
 
   // Select computation device (GPU or CPU) based on availability and config
+#ifdef __EMSCRIPTEN__
+  // The page's WebGPU device, whatever ImpactGPU says.
+  device = 0;
+#else
   if (device >= 0)
   {
     if (torch::cuda::is_available())
@@ -302,6 +312,7 @@ ImpactMetric<TElastix>::BeforeEachResolution()
   {
     this->SetDevice(torch::Device(torch::kCPU));
   }
+#endif
 
   bool useMixedPrecision = false;
   configuration.ReadParameter(useMixedPrecision, "ImpactUseMixedPrecision", this->GetComponentLabel(), level, 0);
@@ -420,7 +431,9 @@ ImpactMetric<TElastix>::BeforeEachResolution()
   {
     std::vector<bool> layersMask = this->GetFixedModelsConfiguration()[i].GetLayersMask();
     fixedNumberOfLayers += std::count(layersMask.begin(), layersMask.end(), true);
+#ifndef __EMSCRIPTEN__
     itk::ModelTo(this->GetFixedModelsConfiguration()[i], this->GetDevice());
+#endif
   }
 
   int movingNumberOfLayers = 0;
@@ -428,7 +441,9 @@ ImpactMetric<TElastix>::BeforeEachResolution()
   {
     std::vector<bool> layersMask = this->GetMovingModelsConfiguration()[i].GetLayersMask();
     movingNumberOfLayers += std::count(layersMask.begin(), layersMask.end(), true);
+#ifndef __EMSCRIPTEN__
     itk::ModelTo(this->GetMovingModelsConfiguration()[i], this->GetDevice());
+#endif
   }
 
   if (fixedNumberOfLayers != movingNumberOfLayers)
