@@ -105,6 +105,12 @@ public:
   void
   BeforeEachResolution() override;
 
+  /** Sets the image to interpolate. At order 0 or 1 a B-spline has no poles and its coefficients
+   * are the pixels: the image is then its own coefficient image, which is neither computed nor kept.
+   */
+  void
+  SetInputImage(const InputImageType * inputData) override;
+
 protected:
   /** The constructor. */
   BSplineInterpolatorFloat() = default;
