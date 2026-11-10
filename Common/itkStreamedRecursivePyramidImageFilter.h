@@ -91,16 +91,20 @@ protected:
 
     // The levels kept from the pyramid of this image, if it had this schedule.
     const TInputImage * const         input = this->GetInput();
-    const bool                        keeps = !FileMappedScratch::Directory().empty();
-    const std::lock_guard<std::mutex> lock(Mutex());
-    const Levels *                    kept = nullptr;
-    for (const Levels & levels : Kept())
+    const bool                   keeps = !FileMappedScratch::Directory().empty();
+    std::unique_lock<std::mutex> lock(Mutex(), std::defer_lock);
+    const Levels *               kept = nullptr;
+    if (keeps)
     {
-      if (keeps && levels.input == input && levels.time == input->GetMTime() &&
-          levels.buffer == input->GetBufferPointer() && levels.schedule == schedule &&
-          levels.shrinks == this->GetUseShrinkImageFilter() && levels.maximumError == this->GetMaximumError())
+      lock.lock();
+      for (const Levels & levels : Kept())
       {
-        kept = &levels;
+        if (levels.input == input && levels.time == input->GetMTime() && levels.buffer == input->GetBufferPointer() &&
+            levels.schedule == schedule && levels.shrinks == this->GetUseShrinkImageFilter() &&
+            levels.maximumError == this->GetMaximumError())
+        {
+          kept = &levels;
+        }
       }
     }
     Levels computed{ input,
