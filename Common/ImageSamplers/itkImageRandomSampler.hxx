@@ -22,7 +22,9 @@
 
 #include "itkImageRandomConstIteratorWithIndex.h"
 #include <itkDeref.h>
+#include <algorithm>
 #include <cassert>
+#include <vector>
 
 namespace itk
 {
@@ -92,36 +94,66 @@ ImageRandomSampler<TInputImage>::GenerateData()
     /** Make sure we are not eternally trying to find samples: */
     randIter.SetNumberOfSamples(10 * this->GetNumberOfSamples());
 
-    /** Loop over the sample container. */
-    InputImagePointType inputPoint;
-    bool                insideMask = false;
-    for (auto & sample : samples)
+    /** The samples are the first positions of the random sequence inside the mask. The positions
+     * are drawn a batch at a time, and those of a batch are looked up in the mask and in the image
+     * in parallel: they are places apart, each one a page to wait for when the image is not in memory.
+     */
+    std::vector<InputImageIndexType> indices;
+    std::vector<ImageSampleType>     candidates;
+    std::vector<char>                inside;
+    std::size_t                      numberOfSamples = 0;
+    std::size_t                      numberOfCandidates = 0;
+    std::size_t                      numberInside = 0;
+    while (numberOfSamples < samples.size())
     {
-      /** Loop until a valid sample is found. */
-      do
+      /** As many positions as the samples left take at the rate of the positions inside so far. */
+      const std::size_t left = samples.size() - numberOfSamples;
+      const std::size_t batch =
+        16 + (numberInside == 0 ? left : static_cast<std::size_t>(1.1 * left * numberOfCandidates / numberInside));
+      indices.clear();
+      while (indices.size() < batch && !(++randIter).IsAtEnd())
       {
-        /** Jump to a random position. */
-        ++randIter;
-        /** Check if we are not trying eternally to find a valid point. */
-        if (randIter.IsAtEnd())
+        indices.push_back(randIter.GetIndex());
+      }
+      candidates.resize(indices.size());
+      inside.resize(indices.size());
+      const auto lookUp = [&](const SizeValueType i) {
+        inputImage.TransformIndexToPhysicalPoint(indices[i], candidates[i].m_ImageCoordinates);
+        inside[i] = mask->IsInsideInWorldSpace(candidates[i].m_ImageCoordinates);
+        if (inside[i])
         {
-          /** Squeeze the sample container to the size that is still valid. */
-          samples.resize(&sample - samples.data());
-          itkExceptionMacro(
-            "Could not find enough image samples within reasonable time. Probably the mask is too small");
+          candidates[i].m_ImageValue = inputImage.GetPixel(indices[i]);
         }
-        /** Get the index, and transform it to the physical coordinates. */
-        InputImageIndexType index = randIter.GetIndex();
-        inputImage.TransformIndexToPhysicalPoint(index, inputPoint);
-        /** Check if it's inside the mask. */
-        insideMask = mask->IsInsideInWorldSpace(inputPoint);
-      } while (!insideMask);
+      };
+      if (Superclass::m_UseMultiThread)
+      {
+        Deref(this->ProcessObject::GetMultiThreader()).ParallelizeArray(0, indices.size(), lookUp, nullptr);
+      }
+      else
+      {
+        for (SizeValueType i = 0; i < indices.size(); ++i)
+        {
+          lookUp(i);
+        }
+      }
+      for (std::size_t i = 0; i < indices.size() && numberOfSamples < samples.size(); ++i)
+      {
+        if (inside[i])
+        {
+          samples[numberOfSamples++] = candidates[i];
+        }
+      }
+      numberOfCandidates += indices.size();
+      numberInside += std::count(inside.begin(), inside.end(), 1);
 
-      /** Put the coordinates and the value in the sample. */
-      sample.m_ImageCoordinates = inputPoint;
-      sample.m_ImageValue = randIter.Get();
-
-    } // end for loop
+      /** Check if we are not trying eternally to find a valid point. */
+      if (randIter.IsAtEnd() && numberOfSamples < samples.size())
+      {
+        /** Squeeze the sample container to the size that is still valid. */
+        samples.resize(numberOfSamples);
+        itkExceptionMacro("Could not find enough image samples within reasonable time. Probably the mask is too small");
+      }
+    }
 
     /** Extra random sample to make sure the same sequence is generated
      * with and without mask.

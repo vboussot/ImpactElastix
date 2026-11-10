@@ -23,10 +23,14 @@
 
 // ITK header files:
 #include <itkImage.h>
+#include <itkImageBufferRange.h>
+#include <itkImageMaskSpatialObject.h>
+#include <itkImageRandomConstIteratorWithIndex.h>
 #include <itkMersenneTwisterRandomVariateGenerator.h>
 
 #include <gtest/gtest.h>
 #include <array>
+#include <vector>
 
 // Using-declarations:
 using elx::CoreMainGTestUtilities::DerefSmartPointer;
@@ -117,4 +121,60 @@ GTEST_TEST(ImageRandomSampler, HasSameOutputWhenUsingMultiThread)
   };
 
   EXPECT_EQ(generateSamples(true), generateSamples(false));
+}
+
+
+// With a mask, the samples are the first positions of the random sequence inside it, whether they are looked up in
+// the mask one at a time or a batch at a time.
+GTEST_TEST(ImageRandomSampler, WithAMaskTakesTheFirstPositionsInsideIt)
+{
+  using PixelType = int;
+  using ImageType = itk::Image<PixelType, 3>;
+  using MaskImageType = itk::Image<unsigned char, 3>;
+  using SamplerType = itk::ImageRandomSampler<ImageType>;
+
+  const auto size = itk::Size<3>::Filled(24);
+  const auto image = CreateImageFilledWithSequenceOfNaturalNumbers<PixelType>(size);
+
+  // A mask of two pixels in five, up to each face of the image: the samples take several batches.
+  const auto maskImage = MaskImageType::New();
+  maskImage->SetRegions(size);
+  maskImage->AllocateInitialized();
+  unsigned int position{};
+  for (unsigned char & pixel : itk::ImageBufferRange<MaskImageType>(*maskImage))
+  {
+    pixel = position++ % 5 < 2;
+  }
+  const auto mask = itk::ImageMaskSpatialObject<3>::New();
+  mask->SetImage(maskImage);
+  mask->Update();
+
+  const size_t                                      numberOfSamples{ 2000 };
+  std::vector<SamplerType::ImageSampleType>         expectedSamples;
+  itk::ImageRandomConstIteratorWithIndex<ImageType> iterator(image, image->GetBufferedRegion());
+  iterator.ReinitializeSeed(1);
+  iterator.GoToBegin();
+  while (expectedSamples.size() < numberOfSamples)
+  {
+    ++iterator;
+    SamplerType::ImageSampleType sample;
+    image->TransformIndexToPhysicalPoint(iterator.GetIndex(), sample.m_ImageCoordinates);
+    if (mask->IsInsideInWorldSpace(sample.m_ImageCoordinates))
+    {
+      sample.m_ImageValue = iterator.Get();
+      expectedSamples.push_back(sample);
+    }
+  }
+
+  for (const bool useMultiThread : { true, false })
+  {
+    elx::DefaultConstruct<SamplerType> sampler{};
+    sampler.SetUseMultiThread(useMultiThread);
+    sampler.SetSeed(1);
+    sampler.SetNumberOfSamples(numberOfSamples);
+    sampler.SetInput(image);
+    sampler.SetMask(mask);
+    sampler.Update();
+    EXPECT_EQ(Deref(sampler.GetOutput()).CastToSTLConstContainer(), expectedSamples);
+  }
 }
