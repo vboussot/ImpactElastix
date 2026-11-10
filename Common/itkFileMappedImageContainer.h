@@ -27,6 +27,7 @@
 #include "itkVersion.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
 #include <fstream>
@@ -168,6 +169,25 @@ public:
     munmap(found->second.first, found->second.second);
     Blocks().erase(found);
     return true;
+#endif
+  }
+
+  /** Tells the kernel how the blocks are read from now on: in order, where it reads ahead of a
+   * page, or at scattered places, where it reads the page asked for and no other.
+   */
+  static void
+  ReadInOrder(const bool inOrder)
+  {
+#ifndef _WIN32
+    static std::atomic<bool> current{ true };
+    if (current.exchange(inOrder) != inOrder)
+    {
+      const std::lock_guard<std::mutex> lock(Mutex());
+      for (const auto & [block, mapping] : Blocks())
+      {
+        madvise(mapping.first, mapping.second, inOrder ? MADV_NORMAL : MADV_RANDOM);
+      }
+    }
 #endif
   }
 

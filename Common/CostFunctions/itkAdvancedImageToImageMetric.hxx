@@ -23,6 +23,7 @@
 
 #include "itkAdvancedRayCastInterpolateImageFunction.h"
 #include "itkComputeImageExtremaFilter.h"
+#include "itkFileMappedImageContainer.h"
 #include <itkDeref.h>
 
 #include <algorithm> // For min.
@@ -631,6 +632,8 @@ AdvancedImageToImageMetric<TFixedImage, TMovingImage>::BeforeThreadedGetValueAnd
     {
       m_ImageSampler->Update();
     }
+    // The samples are places apart: an image mapped from a file is read a page at a time.
+    FileMappedScratch::ReadInOrder(false);
   }
 
 } // end BeforeThreadedGetValueAndDerivative()
