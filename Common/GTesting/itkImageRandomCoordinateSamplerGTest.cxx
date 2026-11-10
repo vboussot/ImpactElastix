@@ -24,6 +24,8 @@
 // ITK header files:
 #include <itkDeref.h>
 #include <itkImage.h>
+#include <itkImageBufferRange.h>
+#include <itkImageMaskSpatialObject.h>
 #include <itkMersenneTwisterRandomVariateGenerator.h>
 
 #include <gtest/gtest.h>
@@ -124,6 +126,53 @@ GTEST_TEST(ImageRandomCoordinateSampler, HasSameOutputWhenUsingMultiThread)
     sampler.SetInput(image);
     sampler.Update();
     return std::move(Deref(sampler.GetOutput()).CastToSTLContainer());
+  };
+
+  EXPECT_EQ(generateSamples(true), generateSamples(false));
+}
+
+
+// With a mask, the samples and the random numbers they take are those of the single-threaded version: the next
+// update draws the same samples after either.
+GTEST_TEST(ImageRandomCoordinateSampler, HasSameOutputWithAMaskWhenUsingMultiThread)
+{
+  using PixelType = int;
+  using ImageType = itk::Image<PixelType, 3>;
+  using MaskImageType = itk::Image<unsigned char, 3>;
+  using SamplerType = itk::ImageRandomCoordinateSampler<ImageType>;
+
+  const auto size = itk::Size<3>::Filled(24);
+  const auto image = CreateImageFilledWithSequenceOfNaturalNumbers<PixelType>(size);
+
+  // A mask of two pixels in five.
+  const auto maskImage = MaskImageType::New();
+  maskImage->SetRegions(size);
+  maskImage->AllocateInitialized();
+  unsigned int position{};
+  for (unsigned char & pixel : itk::ImageBufferRange<MaskImageType>(*maskImage))
+  {
+    pixel = position++ % 5 < 2;
+  }
+  const auto mask = itk::ImageMaskSpatialObject<3>::New();
+  mask->SetImage(maskImage);
+  mask->Update();
+
+  const auto generateSamples = [image, mask](const bool useMultiThread) {
+    elx::DefaultConstruct<MersenneTwisterRandomVariateGenerator> randomVariateGenerator{};
+
+    elx::DefaultConstruct<SamplerType> sampler{};
+    sampler.SetRandomVariateGenerator(randomVariateGenerator);
+    sampler.SetUseMultiThread(useMultiThread);
+    sampler.SetNumberOfSamples(500);
+    sampler.SetInput(image);
+    sampler.SetMask(mask);
+    sampler.Update();
+    auto samples = Deref(sampler.GetOutput()).CastToSTLContainer();
+    sampler.Modified();
+    sampler.Update();
+    const auto & next = Deref(sampler.GetOutput()).CastToSTLConstContainer();
+    samples.insert(samples.end(), next.begin(), next.end());
+    return samples;
   };
 
   EXPECT_EQ(generateSamples(true), generateSamples(false));
