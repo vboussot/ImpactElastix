@@ -22,6 +22,7 @@
 #include "elxElastixMain.h"
 #include "elxMainExeUtilities.h"
 #include <Core/elxVersionMacros.h>
+#include "itkFileMappedImageContainer.h"
 #include "itkUseMevisDicomTiff.h"
 
 // ITK header files:
@@ -67,7 +68,9 @@ constexpr const char * elastixHelpText =
   "  -loglevel set the log level to \"off\", \"error\", \"warning\", or \"info\" (default),\n"
   "  -priority set the process priority to high, abovenormal, normal (default),\n"
   "            belownormal, or idle (Windows only option)\n"
-  "  -threads  set the maximum number of threads of elastix\n\n"
+  "  -threads  set the maximum number of threads of elastix\n"
+  "  -mmap     directory the images are mapped from, the kernel paging them, for images\n"
+  "            larger than the memory (their pyramids and interpolation coefficients too)\n\n"
 
   /** The parameter file.*/
   "The parameter-file must contain all the information "
@@ -243,6 +246,17 @@ main(int argc, char ** argv)
     if (returndummy != 0)
     {
       return returndummy;
+    }
+
+    /** With -mmap, the images allocated from here on keep their buffers in files of that directory. */
+    if (const auto mapped = argMap.find("-mmap"); mapped != argMap.end())
+    {
+      if (!itksys::SystemTools::FileIsDirectory(mapped->second))
+      {
+        std::cerr << "ERROR: the -mmap directory \"" << mapped->second << "\" does not exist." << std::endl;
+        return -2;
+      }
+      itk::FileMappedImageContainerFactory::MapImagesFrom(mapped->second);
     }
 
     elx::log::info("");

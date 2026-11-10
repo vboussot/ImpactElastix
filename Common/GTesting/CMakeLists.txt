@@ -12,6 +12,7 @@ set(ELX_COMMON_GTEST_SOURCES
   itkAdvancedMeanSquaresImageToImageMetricGTest.cxx
   itkComputeImageExtremaFilterGTest.cxx
   itkCorrespondingPointsEuclideanDistancePointMetricGTest.cxx
+  itkFileMappedImageContainerGTest.cxx
   itkGridScheduleComputerGTest.cxx
   itkImageFileCastWriterGTest.cxx
   itkImageFullSamplerGTest.cxx
