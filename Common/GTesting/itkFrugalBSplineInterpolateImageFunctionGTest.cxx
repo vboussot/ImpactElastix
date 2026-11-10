@@ -21,9 +21,11 @@
 
 #include <itkImage.h>
 #include <itkImageBufferRange.h>
+#include <itkImageRegionConstIteratorWithIndex.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
 
 
@@ -35,7 +37,7 @@ ImageType::Pointer
 RandomImage(const unsigned int seed)
 {
   const auto image = ImageType::New();
-  image->SetRegions(itk::Size<3>::Filled(12));
+  image->SetRegions(itk::Size<3>{ { 40, 12, 20 } }); // lines longer and shorter than the horizon of a pole
   image->Allocate();
   std::mt19937                          generator(seed);
   std::uniform_real_distribution<float> distribution(-1000.0f, 1000.0f);
@@ -48,22 +50,32 @@ RandomImage(const unsigned int seed)
 } // namespace
 
 
-// The values and the derivatives are those of the ITK function at each order, with the coefficients in the pixel
-// type of the image, which are the pixels themselves at order 0 and 1, and in double precision.
+// The values and the derivatives are those of the ITK function at each order and around each pixel, with the
+// coefficients in the pixel type of the image, which are the pixels themselves at order 0 and 1, and in double
+// precision.
 GTEST_TEST(FrugalBSplineInterpolateImageFunction, HasTheValuesOfTheItkFunction)
 {
-  const auto                               image = RandomImage(1);
-  const itk::ContinuousIndex<double, 3>    index(itk::MakePoint(3.25, 6.5, 8.75).GetDataPointer());
+  const auto image = RandomImage(1);
   const auto check = [&](const auto & expected, const auto & actual) {
-    for (const unsigned int order : { 0, 1, 3 })
+    for (const unsigned int order : { 0, 1, 2, 3, 4, 5 })
     {
       expected->SetSplineOrder(order);
       expected->SetInputImage(image);
       actual->SetSplineOrder(order);
       actual->SetInputImage(image);
-      EXPECT_EQ(actual->EvaluateAtContinuousIndex(index), expected->EvaluateAtContinuousIndex(index));
-      EXPECT_EQ(actual->EvaluateDerivativeAtContinuousIndex(index),
-                expected->EvaluateDerivativeAtContinuousIndex(index));
+      unsigned int numberOfDifferences{};
+      for (itk::ImageRegionConstIteratorWithIndex<ImageType> iterator(image, image->GetBufferedRegion());
+           !iterator.IsAtEnd();
+           ++iterator)
+      {
+        itk::ContinuousIndex<double, 3> index(iterator.GetIndex());
+        index[0] = std::min(index[0] + 0.37, 39.0);
+        index[1] = std::min(index[1] + 0.61, 11.0);
+        numberOfDifferences +=
+          actual->EvaluateAtContinuousIndex(index) != expected->EvaluateAtContinuousIndex(index) ||
+          actual->EvaluateDerivativeAtContinuousIndex(index) != expected->EvaluateDerivativeAtContinuousIndex(index);
+      }
+      EXPECT_EQ(numberOfDifferences, 0u) << "order " << order;
     }
   };
   check(itk::BSplineInterpolateImageFunction<ImageType, double, float>::New(),
@@ -92,7 +104,7 @@ GTEST_TEST(FrugalBSplineInterpolateImageFunction, KeepsTheCoefficientsOfTheSameP
   EXPECT_EQ(actual->EvaluateAtContinuousIndex(index), expected->EvaluateAtContinuousIndex(index));
 
   // The pixels change, and their container says so: the coefficients are computed again.
-  std::copy_n(other->GetBufferPointer(), 12 * 12 * 12, image->GetBufferPointer());
+  std::copy_n(other->GetBufferPointer(), 40 * 12 * 20, image->GetBufferPointer());
   image->GetPixelContainer()->Modified();
   expected->SetInputImage(other);
   actual->SetInputImage(level);
