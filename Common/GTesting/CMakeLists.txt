@@ -23,6 +23,7 @@ set(ELX_COMMON_GTEST_SOURCES
   itkImageSamplerGTest.cxx
   itkParameterMapInterfaceTest.cxx
   itkParzenWindowHistogramImageToImageMetricGTest.cxx
+  itkStreamedRecursivePyramidImageFilterGTest.cxx
 )
 
 if(USE_ImpactMetric)

@@ -20,12 +20,14 @@
 #include "itkFileMappedImageContainer.h"
 
 #include <itkImage.h>
+#include <itkImageFileWriter.h>
 #include <itkImageRegionRange.h>
 #include <itksys/SystemTools.hxx>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <numeric>
 
 #ifndef _WIN32
 
@@ -64,6 +66,47 @@ GTEST_TEST(FileMappedImageContainer, MapsTheBufferOfALargeImage)
   }
   itk::ObjectFactoryBase::UnRegisterFactory(factory);
   EXPECT_EQ(dynamic_cast<MappedContainerType *>(ImageType::New()->GetPixelContainer()), nullptr);
+}
+
+
+// The pixels of an uncompressed MetaImage are mapped from its file; a compressed one, or one of another pixel type,
+// is left to its reader, and so is every file without the factory.
+GTEST_TEST(FileMappedImageContainer, MapsThePixelsOfAMetaImage)
+{
+  using ImageType = itk::Image<float, 3>;
+  using RangeType = itk::ImageRegionRange<ImageType>;
+
+  const std::string directory = itksys::SystemTools::GetCurrentWorkingDirectory();
+  const auto        image = ImageType::New();
+  image->SetRegions(itk::Size<3>::Filled(162));
+  image->Allocate();
+  image->SetSpacing(itk::MakeVector(0.5, 0.75, 1.25));
+  image->SetOrigin(itk::MakePoint(-10.0, 4.0, 30.0));
+  const RangeType pixels(*image, image->GetBufferedRegion());
+  std::iota(pixels.begin(), pixels.end(), 0.0f);
+  itk::WriteImage(image, directory + "/FileMappedPixels.mhd");
+  itk::WriteImage(image, directory + "/FileMappedPixelsCompressed.mhd", true);
+  EXPECT_EQ(itk::MapImageFile<ImageType>(directory + "/FileMappedPixels.mhd"), nullptr);
+
+  itk::FileMappedImageContainerFactory::MapImagesFrom(directory);
+  const itk::ObjectFactoryBase::Pointer factory = itk::ObjectFactoryBase::GetRegisteredFactories().back();
+  {
+    const auto mapped = itk::MapImageFile<ImageType>(directory + "/FileMappedPixels.mhd");
+    ASSERT_NE(mapped, nullptr);
+    ASSERT_EQ(mapped->GetBufferedRegion(), image->GetBufferedRegion());
+    EXPECT_EQ(mapped->GetSpacing(), image->GetSpacing());
+    EXPECT_EQ(mapped->GetOrigin(), image->GetOrigin());
+    const RangeType read(*mapped, mapped->GetBufferedRegion());
+    EXPECT_TRUE(std::equal(pixels.begin(), pixels.end(), read.begin()));
+    // A write stays in memory: the file keeps its pixels.
+    mapped->FillBuffer(-1.0f);
+    const auto again = itk::MapImageFile<ImageType>(directory + "/FileMappedPixels.mhd");
+    EXPECT_EQ(again->GetPixel(itk::Index<3>::Filled(161)), image->GetPixel(itk::Index<3>::Filled(161)));
+
+    EXPECT_EQ(itk::MapImageFile<ImageType>(directory + "/FileMappedPixelsCompressed.mhd"), nullptr);
+    EXPECT_EQ((itk::MapImageFile<itk::Image<short, 3>>(directory + "/FileMappedPixels.mhd")), nullptr);
+  }
+  itk::ObjectFactoryBase::UnRegisterFactory(factory);
 }
 
 #endif
