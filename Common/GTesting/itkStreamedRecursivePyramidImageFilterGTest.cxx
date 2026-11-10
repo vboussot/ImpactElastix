@@ -28,8 +28,8 @@
 #include <random>
 
 
-// The levels are those of the ITK filter to the bit, the smaller ones computed in several pieces, and the level of
-// factor one shares the pixels of the image.
+// The levels are those of the ITK filter to the bit, the smaller ones computed at once or in several pieces, and the
+// level of factor one shares the pixels of the image.
 GTEST_TEST(StreamedRecursivePyramidImageFilter, HasTheLevelsOfTheItkFilter)
 {
   using ImageType = itk::Image<float, 3>;
@@ -50,33 +50,37 @@ GTEST_TEST(StreamedRecursivePyramidImageFilter, HasTheLevelsOfTheItkFilter)
             (itk::StreamedRecursivePyramidImageFilter<ImageType, ImageType>::PieceSize));
 
   const auto expected = itk::RecursiveMultiResolutionPyramidImageFilter<ImageType, ImageType>::New();
-  const auto actual = itk::StreamedRecursivePyramidImageFilter<ImageType, ImageType>::New();
-  using PyramidType = itk::MultiResolutionPyramidImageFilter<ImageType, ImageType>;
-  for (PyramidType * const pyramid : { static_cast<PyramidType *>(expected), static_cast<PyramidType *>(actual) })
+  expected->SetInput(image);
+  expected->SetNumberOfLevels(3);
+  expected->UpdateLargestPossibleRegion();
+  for (const bool inPieces : { false, true })
   {
-    pyramid->SetInput(image);
-    pyramid->SetNumberOfLevels(3);
-    pyramid->UpdateLargestPossibleRegion();
+    itk::StreamedRecursivePyramidOptions::InPieces() = inPieces;
+    const auto actual = itk::StreamedRecursivePyramidImageFilter<ImageType, ImageType>::New();
+    actual->SetInput(image);
+    actual->SetNumberOfLevels(3);
+    actual->UpdateLargestPossibleRegion();
+    for (unsigned int level = 0; level < 3; ++level)
+    {
+      const ImageType & level1 = *expected->GetOutput(level);
+      const ImageType & level2 = *actual->GetOutput(level);
+      ASSERT_EQ(level2.GetBufferedRegion(), level1.GetBufferedRegion());
+      EXPECT_EQ(level2.GetLargestPossibleRegion(), level1.GetLargestPossibleRegion());
+      EXPECT_EQ(level2.GetSpacing(), level1.GetSpacing());
+      EXPECT_EQ(level2.GetOrigin(), level1.GetOrigin());
+      const RangeType range1(level1);
+      const RangeType range2(level2);
+      EXPECT_TRUE(std::equal(range1.begin(), range1.end(), range2.begin()));
+    }
+    EXPECT_EQ(actual->GetOutput(2)->GetBufferPointer(), image->GetBufferPointer());
+    EXPECT_EQ(image->GetRequestedRegion(), image->GetLargestPossibleRegion());
   }
-  for (unsigned int level = 0; level < 3; ++level)
-  {
-    const ImageType & level1 = *expected->GetOutput(level);
-    const ImageType & level2 = *actual->GetOutput(level);
-    ASSERT_EQ(level2.GetBufferedRegion(), level1.GetBufferedRegion());
-    EXPECT_EQ(level2.GetLargestPossibleRegion(), level1.GetLargestPossibleRegion());
-    EXPECT_EQ(level2.GetSpacing(), level1.GetSpacing());
-    EXPECT_EQ(level2.GetOrigin(), level1.GetOrigin());
-    const RangeType range1(level1);
-    const RangeType range2(level2);
-    EXPECT_TRUE(std::equal(range1.begin(), range1.end(), range2.begin()));
-  }
-  EXPECT_EQ(actual->GetOutput(2)->GetBufferPointer(), image->GetBufferPointer());
-  EXPECT_EQ(image->GetRequestedRegion(), image->GetLargestPossibleRegion());
+  itk::StreamedRecursivePyramidOptions::InPieces() = false;
 }
 
 
-// Out of core, the smaller levels of an image are those of its pyramid before, until the image is modified.
-GTEST_TEST(StreamedRecursivePyramidImageFilter, KeepsTheLevelsOfAnImageOutOfCore)
+// Asked to keep them, a pyramid takes the smaller levels of the pyramid of the image before, until the image is modified.
+GTEST_TEST(StreamedRecursivePyramidImageFilter, KeepsTheLevelsOfAnImage)
 {
   using ImageType = itk::Image<float, 3>;
 
@@ -94,10 +98,10 @@ GTEST_TEST(StreamedRecursivePyramidImageFilter, KeepsTheLevelsOfAnImageOutOfCore
   const auto inMemory = coarsestLevel();
   EXPECT_NE(coarsestLevel()->GetBufferPointer(), inMemory->GetBufferPointer());
 
-  itk::FileMappedScratch::Directory() = ".";
+  itk::StreamedRecursivePyramidOptions::KeepsLevels() = true;
   const auto kept = coarsestLevel();
   EXPECT_EQ(coarsestLevel()->GetBufferPointer(), kept->GetBufferPointer());
   image->Modified();
   EXPECT_NE(coarsestLevel()->GetBufferPointer(), kept->GetBufferPointer());
-  itk::FileMappedScratch::Directory().clear();
+  itk::StreamedRecursivePyramidOptions::KeepsLevels() = false;
 }

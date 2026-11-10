@@ -23,6 +23,7 @@
 #include "elxMainExeUtilities.h"
 #include <Core/elxVersionMacros.h>
 #include "itkFileMappedImageContainer.h"
+#include "itkStreamedRecursivePyramidImageFilter.h"
 #include "itkUseMevisDicomTiff.h"
 
 // ITK header files:
@@ -270,6 +271,12 @@ main(int argc, char ** argv)
       itk::FileMappedImageContainerFactory::MapImagesFrom(outFolder);
       elx::log::info("-outofcore: the images are kept in files of the output directory, paged in by the system.");
     }
+
+    /** The images of a run are those of its files, and each parameter file computes the same pyramids of them:
+     * they are kept from one to the next. Out of core they are computed a piece at a time.
+     */
+    itk::StreamedRecursivePyramidOptions::KeepsLevels() = true;
+    itk::StreamedRecursivePyramidOptions::InPieces() = outOfCore;
 
     elx::log::info("");
 

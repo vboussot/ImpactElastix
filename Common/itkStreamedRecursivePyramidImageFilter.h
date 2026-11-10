@@ -20,7 +20,6 @@
 
 #include "itkCastImageFilter.h"
 #include "itkDiscreteGaussianImageFilter.h"
-#include "itkFileMappedImageContainer.h"
 #include "itkIdentityTransform.h"
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkRecursiveMultiResolutionPyramidImageFilter.h"
@@ -37,17 +36,42 @@
 namespace itk
 {
 
+/** \class StreamedRecursivePyramidOptions
+ * \brief What a process asks of the recursive pyramids it computes.
+ */
+struct StreamedRecursivePyramidOptions
+{
+  /** Whether a pyramid keeps its smaller levels for the next pyramid of the same image, schedule
+   * and settings. For a process whose images are those of files, as elastix run from the command
+   * line: each parameter file computes the same pyramids.
+   */
+  static bool &
+  KeepsLevels()
+  {
+    static bool keeps = false;
+    return keeps;
+  }
+
+  /** Whether a level is smoothed and shrunk a piece of its source at a time. For images that are
+   * not in memory: the intermediate images are of the size of a piece, and the source is read
+   * once, in order. In memory one piece is faster.
+   */
+  static bool &
+  InPieces()
+  {
+    static bool pieces = false;
+    return pieces;
+  }
+};
+
+
 /** \class StreamedRecursivePyramidImageFilter
- * \brief The pyramid of RecursiveMultiResolutionPyramidImageFilter, computed in pieces.
+ * \brief The pyramid of RecursiveMultiResolutionPyramidImageFilter, without its copies.
  *
  * The levels are those of the superclass, to the bit. A level of the size of the one it comes
- * from shares its pixels, where the superclass copies them. A smaller one is smoothed and shrunk
- * PieceSize bytes of its source at a time, where the superclass smooths the whole source at once:
- * the intermediate images are of the size of a piece, and the source is read once, in order.
- *
- * Out of core (FileMappedScratch has a directory) the images are those of the files of a run, and
- * the smaller levels of an image are kept for the next pyramid of the same image and schedule:
- * the one of the next parameter file.
+ * from shares its pixels, where the superclass copies them. StreamedRecursivePyramidOptions
+ * asks for more: the smaller levels computed PieceSize bytes of their source at a time, and kept
+ * for the next pyramid of the same image.
  */
 template <typename TInputImage, typename TOutputImage>
 class ITK_TEMPLATE_EXPORT StreamedRecursivePyramidImageFilter
@@ -91,7 +115,7 @@ protected:
 
     // The levels kept from the pyramid of this image, if it had this schedule.
     const TInputImage * const         input = this->GetInput();
-    const bool                   keeps = !FileMappedScratch::Directory().empty();
+    const bool                   keeps = StreamedRecursivePyramidOptions::KeepsLevels();
     std::unique_lock<std::mutex> lock(Mutex(), std::defer_lock);
     const Levels *               kept = nullptr;
     if (keeps)
@@ -172,17 +196,22 @@ protected:
         }
         shrinker->SetInput(smoother->GetOutput());
 
-        const auto streamer = StreamingImageFilter<TOutputImage, TOutputImage>::New();
-        streamer->SetInput(shrinker->GetOutput());
-        streamer->SetNumberOfStreamDivisions(
-          1 + source->GetLargestPossibleRegion().GetNumberOfPixels() * sizeof(typename TOutputImage::PixelType) /
-                PieceSize);
-        // The pieces leave the region of the last one requested from the source, which may be the input.
+        typename ImageSource<TOutputImage>::Pointer last = shrinker;
+        if (StreamedRecursivePyramidOptions::InPieces())
+        {
+          const auto streamer = StreamingImageFilter<TOutputImage, TOutputImage>::New();
+          streamer->SetInput(shrinker->GetOutput());
+          streamer->SetNumberOfStreamDivisions(
+            1 + source->GetLargestPossibleRegion().GetNumberOfPixels() * sizeof(typename TOutputImage::PixelType) /
+                  PieceSize);
+          last = streamer;
+        }
+        // The update leaves the region it asked for requested from the source, which may be the input.
         const auto requested = source->GetRequestedRegion();
-        streamer->Update();
+        last->UpdateLargestPossibleRegion();
         source->SetRequestedRegion(requested);
 
-        source = streamer->GetOutput();
+        source = last->GetOutput();
         source->DisconnectPipeline();
         source->SetLargestPossibleRegion(this->GetOutput(level)->GetLargestPossibleRegion());
       }
