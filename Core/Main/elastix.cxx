@@ -31,6 +31,7 @@
 #include <itksys/SystemTools.hxx>
 
 // Standard C++ header files:
+#include <algorithm>
 #include <cassert>
 #include <climits> // For UINT_MAX.
 #include <cstddef> // For size_t.
@@ -69,8 +70,9 @@ constexpr const char * elastixHelpText =
   "  -priority set the process priority to high, abovenormal, normal (default),\n"
   "            belownormal, or idle (Windows only option)\n"
   "  -threads  set the maximum number of threads of elastix\n"
-  "  -mmap     directory the images are mapped from, the kernel paging them, for images\n"
-  "            larger than the memory (their pyramids and interpolation coefficients too)\n\n"
+  "  -outofcore  keep the images of the registration (with their pyramids and interpolation\n"
+  "            coefficients) in files of the output directory, paged in by the system: for\n"
+  "            images larger than the memory. Takes no value.\n\n"
 
   /** The parameter file.*/
   "The parameter-file must contain all the information "
@@ -96,6 +98,20 @@ main(int argc, char ** argv)
 #ifdef _MSC_VER
     SetConsoleOutputCP(CP_UTF8);
 #endif
+
+    /** -outofcore takes no value: it leaves the key-value pairs the arguments are read as. */
+    std::vector<char *> arguments(argv, argv + argc);
+    const auto          outOfCoreFlag = std::find_if(arguments.begin() + 1, arguments.end(), [](const char * argument) {
+      return std::string(argument) == "-outofcore";
+    });
+    const bool          outOfCore = outOfCoreFlag != arguments.end();
+    if (outOfCore)
+    {
+      arguments.erase(outOfCoreFlag);
+      argc = static_cast<int>(arguments.size());
+      arguments.push_back(nullptr);
+      argv = arguments.data();
+    }
 
     /** Check if "--help" or "--version" was asked for. */
     if (argc == 1)
@@ -248,15 +264,11 @@ main(int argc, char ** argv)
       return returndummy;
     }
 
-    /** With -mmap, the images allocated from here on keep their buffers in files of that directory. */
-    if (const auto mapped = argMap.find("-mmap"); mapped != argMap.end())
+    /** With -outofcore, the images allocated from here on keep their buffers in files of the output directory. */
+    if (outOfCore)
     {
-      if (!itksys::SystemTools::FileIsDirectory(mapped->second))
-      {
-        std::cerr << "ERROR: the -mmap directory \"" << mapped->second << "\" does not exist." << std::endl;
-        return -2;
-      }
-      itk::FileMappedImageContainerFactory::MapImagesFrom(mapped->second);
+      itk::FileMappedImageContainerFactory::MapImagesFrom(outFolder);
+      elx::log::info("-outofcore: the images are kept in files of the output directory, paged in by the system.");
     }
 
     elx::log::info("");
