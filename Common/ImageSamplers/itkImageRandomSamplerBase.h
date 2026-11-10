@@ -126,6 +126,13 @@ protected:
   void
   PrintSelf(std::ostream & os, Indent indent) const override;
 
+  /** The seed of an update: the one that was set, or the next of a sequence each sampler starts the same. */
+  SeedIntegerType
+  NextSeed()
+  {
+    return m_OptionalSeed.value_or(++m_Seed);
+  }
+
   /** Member variable used when threading. */
   std::vector<double> m_RandomNumberList{};
 
