@@ -82,8 +82,14 @@ public:
       fail("create a file of");
     }
     unlink(path.c_str());
+#  ifdef __APPLE__
+    // No posix_fallocate there: the file is sized, and a full device faults at the first write of a page.
+    const int error = ftruncate(descriptor, static_cast<off_t>(bytes)) == 0 ? 0 : errno;
+#  else
     // Reserved on the device now: a full device is an error here, not a fault at the first write of a page.
-    if (const int error = posix_fallocate(descriptor, 0, static_cast<off_t>(bytes)); error != 0)
+    const int error = posix_fallocate(descriptor, 0, static_cast<off_t>(bytes));
+#  endif
+    if (error != 0)
     {
       errno = error;
       fail("reserve");
