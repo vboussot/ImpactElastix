@@ -242,6 +242,7 @@ protected:
     this->Override<double>();
     this->Override<CovariantVector<double, 2>>();
     this->Override<CovariantVector<double, 3>>();
+    this->Override<CovariantVector<double, 4>>();
   }
 
 private:
