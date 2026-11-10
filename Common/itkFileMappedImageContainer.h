@@ -18,13 +18,18 @@
 #ifndef itkFileMappedImageContainer_h
 #define itkFileMappedImageContainer_h
 
+#include "itkByteSwapper.h"
 #include "itkCovariantVector.h"
+#include "itkImageFileReader.h"
 #include "itkImportImageContainer.h"
 #include "itkMacro.h"
 #include "itkObjectFactoryBase.h"
 #include "itkVersion.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -35,6 +40,7 @@
 #  include <cstring>
 #  include <fcntl.h>
 #  include <sys/mman.h>
+#  include <sys/stat.h>
 #  include <unistd.h>
 #endif
 
@@ -46,7 +52,8 @@ namespace itk
  *
  * A block is the mapping of a file created in the directory and unlinked at once: the kernel
  * pages it in and out as memory allows, where an allocation stays in memory or in the swap,
- * and the file goes with its mapping, however the process ends.
+ * and the file goes with its mapping, however the process ends. The pixels of an image file
+ * are mapped where they are.
  */
 class FileMappedScratch
 {
@@ -101,7 +108,46 @@ public:
     }
     close(descriptor);
     const std::lock_guard<std::mutex> lock(Mutex());
-    Blocks()[block] = bytes;
+    Blocks()[block] = { block, bytes };
+    return block;
+#endif
+  }
+
+  /** The `bytes` bytes of the file at `path` from `offset`, or null when the file does not hold them.
+   * The mapping is private: its pages are read from the file as they are touched and dropped
+   * under pressure without a write, and a write stays in memory.
+   */
+  static void *
+  MapFile(const std::string & path, const std::size_t offset, const std::size_t bytes)
+  {
+#ifdef _WIN32
+    return nullptr;
+#else
+    const int   descriptor = open(path.c_str(), O_RDONLY);
+    struct stat status;
+    if (descriptor < 0 || fstat(descriptor, &status) != 0 || static_cast<std::size_t>(status.st_size) < offset + bytes)
+    {
+      if (descriptor >= 0)
+      {
+        close(descriptor);
+      }
+      return nullptr;
+    }
+    const std::size_t lead = offset % static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+    void * const      start = mmap(nullptr,
+                              lead + bytes,
+                              PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_NORESERVE,
+                              descriptor,
+                              static_cast<off_t>(offset - lead));
+    close(descriptor);
+    if (start == MAP_FAILED)
+    {
+      return nullptr;
+    }
+    void * const                      block = static_cast<char *>(start) + lead;
+    const std::lock_guard<std::mutex> lock(Mutex());
+    Blocks()[block] = { start, lead + bytes };
     return block;
 #endif
   }
@@ -119,7 +165,7 @@ public:
     {
       return false;
     }
-    munmap(block, found->second);
+    munmap(found->second.first, found->second.second);
     Blocks().erase(found);
     return true;
 #endif
@@ -132,10 +178,11 @@ private:
     static std::mutex mutex;
     return mutex;
   }
-  static std::unordered_map<void *, std::size_t> &
+  /** The start and the length of the mapping of each block. */
+  static std::unordered_map<void *, std::pair<void *, std::size_t>> &
   Blocks()
   {
-    static std::unordered_map<void *, std::size_t> blocks;
+    static std::unordered_map<void *, std::pair<void *, std::size_t>> blocks;
     return blocks;
   }
 };
@@ -257,6 +304,85 @@ private:
                            CreateObjectFunction<FileMappedImageContainer<TElement>>::New());
   }
 };
+
+
+
+/** The image of the MetaImage file `fileName` with its pixels mapped from the file, or null when
+ * they cannot be: no FileMappedImageContainerFactory, a compressed file, another pixel type or
+ * byte order than the image's, pixels in several files, an image under the mapping threshold.
+ * The caller then reads the file.
+ */
+template <typename TImage>
+typename TImage::Pointer
+MapImageFile(const std::string & fileName)
+{
+  using PixelType = typename TImage::PixelType;
+
+  std::string extension = fileName.substr(std::min(fileName.size(), fileName.rfind('.') + 1));
+  std::transform(extension.begin(), extension.end(), extension.begin(), [](const unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (FileMappedScratch::Directory().empty() || (extension != "mha" && extension != "mhd"))
+  {
+    return nullptr;
+  }
+
+  // The header is lines of "Key = Value" and ends with the line that tells where the pixels are.
+  std::ifstream header(fileName, std::ios::binary);
+  std::string   line;
+  std::string   pixels;
+  while (pixels.empty() && std::getline(header, line))
+  {
+    const auto equals = line.find(" = ");
+    if (equals == std::string::npos)
+    {
+      return nullptr;
+    }
+    const std::string key = line.substr(0, equals);
+    const std::string value = line.substr(equals + 3, line.find_last_not_of(" \r") - equals - 2);
+    if ((key == "CompressedData" && value == "True") || (key == "HeaderSize" && value != "0"))
+    {
+      return nullptr;
+    }
+    if (key == "ElementDataFile")
+    {
+      pixels = value;
+    }
+  }
+  if (pixels.empty() || pixels == "LIST" || pixels.find('%') != std::string::npos)
+  {
+    return nullptr;
+  }
+  const bool        local = pixels == "LOCAL" || pixels == "Local" || pixels == "local";
+  const std::size_t offset = local ? static_cast<std::size_t>(header.tellg()) : 0;
+  const std::string path = local ? fileName : fileName.substr(0, fileName.find_last_of("/\\") + 1) + pixels;
+
+  const auto reader = ImageFileReader<TImage>::New();
+  reader->SetFileName(fileName);
+  reader->UpdateOutputInformation();
+  const ImageIOBase &             io = *reader->GetImageIO();
+  const typename TImage::Pointer  image = reader->GetOutput();
+  const SizeValueType             numberOfPixels = image->GetLargestPossibleRegion().GetNumberOfPixels();
+  const std::size_t               bytes = numberOfPixels * sizeof(PixelType);
+  const IOByteOrderEnum           native =
+    ByteSwapper<int>::SystemIsLittleEndian() ? IOByteOrderEnum::LittleEndian : IOByteOrderEnum::BigEndian;
+  if (io.GetComponentType() != ImageIOBase::MapPixelType<PixelType>::CType || io.GetNumberOfComponents() != 1 ||
+      io.GetNumberOfDimensions() != TImage::ImageDimension || io.GetByteOrder() != native ||
+      offset % alignof(PixelType) != 0 || bytes < FileMappedImageContainer<PixelType>::Threshold ||
+      dynamic_cast<FileMappedImageContainer<PixelType> *>(image->GetPixelContainer()) == nullptr)
+  {
+    return nullptr;
+  }
+  void * const block = FileMappedScratch::MapFile(path, offset, bytes);
+  if (block == nullptr)
+  {
+    return nullptr;
+  }
+  image->DisconnectPipeline();
+  image->SetBufferedRegion(image->GetLargestPossibleRegion());
+  image->GetPixelContainer()->SetImportPointer(static_cast<PixelType *>(block), numberOfPixels, true);
+  return image;
+}
 
 } // end namespace itk
 
