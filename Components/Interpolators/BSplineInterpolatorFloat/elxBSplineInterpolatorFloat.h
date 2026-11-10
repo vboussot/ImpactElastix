@@ -19,7 +19,7 @@
 #define elxBSplineInterpolatorFloat_h
 
 #include "elxIncludes.h" // include first to avoid MSVS warning
-#include "itkBSplineInterpolateImageFunction.h"
+#include "itkFrugalBSplineInterpolateImageFunction.h"
 
 namespace elastix
 {
@@ -48,7 +48,7 @@ namespace elastix
 
 template <typename TElastix>
 class ITK_TEMPLATE_EXPORT BSplineInterpolatorFloat
-  : public itk::BSplineInterpolateImageFunction<typename InterpolatorBase<TElastix>::InputImageType,
+  : public itk::FrugalBSplineInterpolateImageFunction<typename InterpolatorBase<TElastix>::InputImageType,
                                                 typename InterpolatorBase<TElastix>::CoordinateType,
                                                 float>
   , // CoefficientType
@@ -59,7 +59,7 @@ public:
 
   /** Standard ITK-stuff. */
   using Self = BSplineInterpolatorFloat;
-  using Superclass1 = itk::BSplineInterpolateImageFunction<typename InterpolatorBase<TElastix>::InputImageType,
+  using Superclass1 = itk::FrugalBSplineInterpolateImageFunction<typename InterpolatorBase<TElastix>::InputImageType,
                                                            typename InterpolatorBase<TElastix>::CoordinateType,
                                                            float>;
   using Superclass2 = InterpolatorBase<TElastix>;
@@ -104,12 +104,6 @@ public:
    */
   void
   BeforeEachResolution() override;
-
-  /** Sets the image to interpolate. At order 0 or 1 a B-spline has no poles and its coefficients
-   * are the pixels: the image is then its own coefficient image, which is neither computed nor kept.
-   */
-  void
-  SetInputImage(const InputImageType * inputData) override;
 
 protected:
   /** The constructor. */

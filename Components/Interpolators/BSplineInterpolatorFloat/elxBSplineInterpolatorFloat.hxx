@@ -21,8 +21,6 @@
 
 #include "elxBSplineInterpolatorFloat.h"
 
-#include <type_traits>
-
 namespace elastix
 {
 
@@ -54,29 +52,6 @@ BSplineInterpolatorFloat<TElastix>::BeforeEachResolution()
   this->SetSplineOrder(splineOrder);
 
 } // end BeforeEachResolution()
-
-
-/**
- * ***************** SetInputImage ***********************
- */
-
-template <typename TElastix>
-void
-BSplineInterpolatorFloat<TElastix>::SetInputImage(const InputImageType * inputData)
-{
-  if constexpr (std::is_same_v<InputImageType, CoefficientImageType>)
-  {
-    if (inputData != nullptr && this->GetSplineOrder() <= 1)
-    {
-      this->m_Coefficients = inputData;
-      this->m_DataLength = inputData->GetBufferedRegion().GetSize();
-      Superclass1::Superclass::SetInputImage(inputData);
-      return;
-    }
-  }
-  Superclass1::SetInputImage(inputData);
-
-} // end SetInputImage()
 
 
 } // end namespace elastix
