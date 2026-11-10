@@ -73,3 +73,31 @@ GTEST_TEST(StreamedRecursivePyramidImageFilter, HasTheLevelsOfTheItkFilter)
   EXPECT_EQ(actual->GetOutput(2)->GetBufferPointer(), image->GetBufferPointer());
   EXPECT_EQ(image->GetRequestedRegion(), image->GetLargestPossibleRegion());
 }
+
+
+// Out of core, the smaller levels of an image are those of its pyramid before, until the image is modified.
+GTEST_TEST(StreamedRecursivePyramidImageFilter, KeepsTheLevelsOfAnImageOutOfCore)
+{
+  using ImageType = itk::Image<float, 3>;
+
+  const auto image = ImageType::New();
+  image->SetRegions(itk::Size<3>::Filled(32));
+  image->AllocateInitialized();
+  const auto coarsestLevel = [image] {
+    const auto pyramid = itk::StreamedRecursivePyramidImageFilter<ImageType, ImageType>::New();
+    pyramid->SetInput(image);
+    pyramid->SetNumberOfLevels(2);
+    pyramid->UpdateLargestPossibleRegion();
+    return ImageType::Pointer(pyramid->GetOutput(0));
+  };
+
+  const auto inMemory = coarsestLevel();
+  EXPECT_NE(coarsestLevel()->GetBufferPointer(), inMemory->GetBufferPointer());
+
+  itk::FileMappedScratch::Directory() = ".";
+  const auto kept = coarsestLevel();
+  EXPECT_EQ(coarsestLevel()->GetBufferPointer(), kept->GetBufferPointer());
+  image->Modified();
+  EXPECT_NE(coarsestLevel()->GetBufferPointer(), kept->GetBufferPointer());
+  itk::FileMappedScratch::Directory().clear();
+}

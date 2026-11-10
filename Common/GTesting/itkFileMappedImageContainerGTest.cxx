@@ -65,6 +65,7 @@ GTEST_TEST(FileMappedImageContainer, MapsTheBufferOfALargeImage)
     EXPECT_EQ(small->GetPixel(itk::Index<3>::Filled(7)), 1.0f);
   }
   itk::ObjectFactoryBase::UnRegisterFactory(factory);
+  itk::FileMappedScratch::Directory().clear();
   EXPECT_EQ(dynamic_cast<MappedContainerType *>(ImageType::New()->GetPixelContainer()), nullptr);
 }
 
@@ -107,6 +108,7 @@ GTEST_TEST(FileMappedImageContainer, MapsThePixelsOfAMetaImage)
     EXPECT_EQ((itk::MapImageFile<itk::Image<short, 3>>(directory + "/FileMappedPixels.mhd")), nullptr);
   }
   itk::ObjectFactoryBase::UnRegisterFactory(factory);
+  itk::FileMappedScratch::Directory().clear();
 }
 
 #endif
