@@ -270,6 +270,8 @@ AdvancedImageToImageMetric<TFixedImage, TMovingImage>::CheckForBSplineInterpolat
     itkDebugMacro("Interpolator is not B-spline");
   }
 
+  m_FrugalBSplineInterpolator = dynamic_cast<decltype(m_FrugalBSplineInterpolator)>(interpolator);
+
   m_BSplineInterpolatorFloat = dynamic_cast<BSplineInterpolatorFloatType *>(interpolator);
   if (m_BSplineInterpolatorFloat)
   {

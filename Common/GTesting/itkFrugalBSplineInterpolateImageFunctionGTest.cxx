@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <random>
 
 
@@ -123,4 +124,25 @@ GTEST_TEST(FrugalBSplineInterpolateImageFunction, KeepsTheCoefficientsOfTheSameP
   expected->SetInputImage(other);
   actual->SetInputImage(level);
   EXPECT_EQ(actual->EvaluateAtContinuousIndex(index), expected->EvaluateAtContinuousIndex(index));
+}
+
+
+// Asking for the coefficients around a point ahead is a hint: it reads nothing, wherever the point is, and the
+// values after it are those before it.
+GTEST_TEST(FrugalBSplineInterpolateImageFunction, PrefetchesAnywhere)
+{
+  const auto                            image = RandomImage(1);
+  const itk::ContinuousIndex<double, 3> index(itk::MakePoint(3.25, 6.5, 8.75).GetDataPointer());
+  const auto                            function = itk::FrugalBSplineInterpolateImageFunction<ImageType>::New();
+  for (const unsigned int order : { 0, 1, 2, 3, 4, 5 })
+  {
+    function->SetSplineOrder(order);
+    function->SetInputImage(image);
+    const double value = function->EvaluateAtContinuousIndex(index);
+    for (const double position : { -1e300, -0.5, 0.0, 6.5, 11.0, 19.4, 39.5, 1e300, std::nan("") })
+    {
+      function->Prefetch(itk::ContinuousIndex<double, 3>(itk::MakePoint(position, 6.5, position).GetDataPointer()));
+    }
+    EXPECT_EQ(function->EvaluateAtContinuousIndex(index), value) << "order " << order;
+  }
 }

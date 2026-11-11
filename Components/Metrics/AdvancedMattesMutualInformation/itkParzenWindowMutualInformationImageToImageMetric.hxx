@@ -456,9 +456,13 @@ ParzenWindowMutualInformationImageToImageMetric<TFixedImage, TMovingImage>::Thre
     RealType                    movingImageValue;
     MovingImageDerivativeType   movingImageDerivative;
 
-    /** Transform point. */
+    /** Transform point, and ask for the moving image around the point of a sample ahead. */
     const MovingImagePointType mappedPoint =
       mapped ? Superclass::m_MappedPoints[&sample - samples.data()] : this->TransformPoint(fixedPoint);
+    if (const size_t ahead = &sample - samples.data() + 8; mapped && ahead < samples.size())
+    {
+      this->PrefetchMovingImage(Superclass::m_MappedPoints[ahead]);
+    }
 
     /** Check if the point is inside the moving mask. */
     bool sampleOk = this->IsInsideMovingMask(mappedPoint);

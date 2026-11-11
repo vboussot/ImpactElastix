@@ -23,6 +23,7 @@
 #include "itkImageLinearIteratorWithIndex.h"
 #include "itkMultiThreaderBase.h"
 
+#include <algorithm>
 #include <cmath>
 #include <type_traits>
 #include <vector>
@@ -98,6 +99,50 @@ public:
     }
     this->m_DataLength = inputData->GetBufferedRegion().GetSize();
     Superclass::Superclass::SetInputImage(inputData);
+  }
+
+  /** Asks the processor for the coefficients an evaluation at a continuous index reads, ahead of
+   * the evaluation: the points of a metric fall all over the image, and their coefficients come
+   * from memory while the points before them are evaluated. A hint, which changes no value.
+   */
+  void
+  Prefetch(const typename Superclass::ContinuousIndexType & x) const
+  {
+#if defined(__GNUC__)
+    constexpr unsigned int        Dimension = Superclass::ImageDimension;
+    const CoefficientImageType &  image = *this->m_Coefficients;
+    const auto &                  region = image.GetBufferedRegion();
+    const OffsetValueType * const strides = image.GetOffsetTable();
+    const auto * const            buffer = image.GetBufferPointer();
+    const unsigned int            order = this->m_SplineOrder;
+    // The offset along an axis of a position of the support, kept inside the buffer wherever the point is.
+    const auto offset = [&](const unsigned int n, const unsigned int k) {
+      const double position = std::floor(x[n] + (order & 1 ? 0.0 : 0.5)) - order / 2 - region.GetIndex(n) + k;
+      const double last = static_cast<double>(region.GetSize(n) - 1);
+      return static_cast<OffsetValueType>(position > 0.0 ? std::min(position, last) : 0.0) * strides[n];
+    };
+    // Both ends of each line of the support along the first axis.
+    unsigned int position[Dimension]{};
+    while (true)
+    {
+      OffsetValueType line = 0;
+      for (unsigned int n = 1; n < Dimension; ++n)
+      {
+        line += offset(n, position[n]);
+      }
+      __builtin_prefetch(buffer + line + offset(0, 0));
+      __builtin_prefetch(buffer + line + offset(0, order));
+      unsigned int n = 1;
+      while (n < Dimension && ++position[n] > order)
+      {
+        position[n++] = 0;
+      }
+      if (n >= Dimension)
+      {
+        break;
+      }
+    }
+#endif
   }
 
 protected:

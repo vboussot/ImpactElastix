@@ -1008,15 +1008,27 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ThreadedComp
 
   /** Loop over sample container and compute contribution of each sample to pdfs. */
   const auto * const firstSample = this->GetImageSampler()->GetOutput()->CastToSTLConstContainer().data();
-  for (const auto & sample : this->Superclass::GetRangeOfSamples(threadId))
+  const auto         samples = this->Superclass::GetRangeOfSamples(threadId);
+  auto               transformed = samples.begin();
+  for (auto iterator = samples.begin(); iterator != samples.end(); ++iterator)
   {
-    /** Read fixed coordinates and initialize some variables. */
-    const FixedImagePointType & fixedPoint = sample.m_ImageCoordinates;
-    RealType                    movingImageValue;
+    const auto & sample = *iterator;
+    RealType     movingImageValue;
 
-    /** Transform point, and keep it for the next pass over the samples. */
-    const MovingImagePointType mappedPoint = this->TransformPoint(fixedPoint);
-    m_MappedPoints[&sample - firstSample] = mappedPoint;
+    /** Transform the points of a few samples at a time, keep them for the next pass over the
+     * samples, and ask for the moving image around them while the samples before are evaluated.
+     */
+    if (iterator == transformed)
+    {
+      for (const auto end = transformed + std::min<std::ptrdiff_t>(samples.end() - transformed, 32); transformed != end;
+           ++transformed)
+      {
+        const MovingImagePointType point = this->TransformPoint(transformed->m_ImageCoordinates);
+        m_MappedPoints[&*transformed - firstSample] = point;
+        this->PrefetchMovingImage(point);
+      }
+    }
+    const MovingImagePointType & mappedPoint = m_MappedPoints[&sample - firstSample];
 
     /** Check if the point is inside the moving mask. */
     bool sampleOk = this->IsInsideMovingMask(mappedPoint);
