@@ -71,7 +71,7 @@ public:
   Allocate(const std::size_t bytes)
   {
 #ifdef _WIN32
-    // ponytail: POSIX mappings only; CreateFileMapping/MapViewOfFile when a Windows user needs it.
+    // Mappings are POSIX ones: Windows would take CreateFileMapping and MapViewOfFile.
     itkGenericExceptionMacro("Images mapped from files are not available on Windows.");
 #else
     std::string  path = Directory() + "/elastix_image_XXXXXX";
