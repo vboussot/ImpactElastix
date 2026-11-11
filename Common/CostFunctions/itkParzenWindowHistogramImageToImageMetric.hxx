@@ -953,6 +953,7 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ComputePDFs(
   /** Option for now to still use the single threaded code. */
   if (!Superclass::m_UseMultiThread)
   {
+    m_MappedPoints.clear();
     return this->ComputePDFsSingleThreaded(parameters);
   }
 
@@ -970,6 +971,7 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ComputePDFs(
    * - Now you can call GetValueAndDerivative multi-threaded.
    */
   this->BeforeThreadedGetValueAndDerivative(parameters);
+  m_MappedPoints.resize(this->GetImageSampler()->GetOutput()->Size());
 
   // Set up threader and launch multi-threaded JointPDF computation:
   this->m_Threader->SetSingleMethodAndExecute(
@@ -1005,14 +1007,16 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ThreadedComp
   unsigned long numberOfPixelsCounted = 0;
 
   /** Loop over sample container and compute contribution of each sample to pdfs. */
+  const auto * const firstSample = this->GetImageSampler()->GetOutput()->CastToSTLConstContainer().data();
   for (const auto & sample : this->Superclass::GetRangeOfSamples(threadId))
   {
     /** Read fixed coordinates and initialize some variables. */
     const FixedImagePointType & fixedPoint = sample.m_ImageCoordinates;
     RealType                    movingImageValue;
 
-    /** Transform point. */
+    /** Transform point, and keep it for the next pass over the samples. */
     const MovingImagePointType mappedPoint = this->TransformPoint(fixedPoint);
+    m_MappedPoints[&sample - firstSample] = mappedPoint;
 
     /** Check if the point is inside the moving mask. */
     bool sampleOk = this->IsInsideMovingMask(mappedPoint);
