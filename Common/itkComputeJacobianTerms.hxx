@@ -214,13 +214,13 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
               const unsigned int q = prevjacind[qi];
               if (q >= p)
               {
-                const double tempval = jactjac(pi, qi) / n;
+                const double tempval = jactjac[pi][qi] / n;
                 if (std::abs(tempval) > 1e-14)
                 {
                   const unsigned int bandindex = bandcovMap[q - p];
                   if (bandindex < bandcovsize)
                   {
-                    bandcov(p, bandindex) += tempval;
+                    bandcov[p][bandindex] += tempval;
                   }
                   else
                   {
@@ -255,7 +255,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
             own.clear();
             for (unsigned int pi = 0; pi < sizejacind; ++pi)
             {
-              if (jacind[pi] % numberOfOwners == owner)
+              if (static_cast<unsigned int>(jacind[pi]) % static_cast<unsigned int>(numberOfOwners) == owner)
               {
                 own.push_back(pi);
               }
@@ -263,6 +263,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
           }
           for (const unsigned int pi : own)
           {
+            double * const row = jactjac[pi];
             for (unsigned int qi = 0; qi < sizejacind; ++qi)
             {
               if (jacind[qi] >= jacind[pi])
@@ -273,7 +274,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
                 {
                   accum += jacj[k][pi] * jacj[k][qi];
                 }
-                jactjac(pi, qi) = sameIndices ? jactjac(pi, qi) + accum : accum;
+                row[qi] = sameIndices ? row[qi] + accum : accum;
               }
             }
           }
@@ -289,7 +290,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
         {
           for (unsigned int b = 0; b < bandcovsize; ++b)
           {
-            const double tempval = bandcov(p, b);
+            const double tempval = bandcov[p][b];
             if (std::abs(tempval) > 1e-14)
             {
               const unsigned int q = p + bandcovMap2[b];
