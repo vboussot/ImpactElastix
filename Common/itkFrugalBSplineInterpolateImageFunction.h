@@ -307,35 +307,28 @@ private:
     return interpolated;
   }
 
-  /** The value and the derivative at a continuous index, summed as the superclass sums them. */
+  /** The value and the derivative at a continuous index. The superclass sums the value and each axis
+   * of the derivative over the support one after the other; here one pass over the support adds a
+   * term to each sum, in the same order, so that the sums do not wait for each other.
+   */
   template <unsigned int VOrder>
   void
   ValueAndDerivative(const ContinuousIndexType & x, OutputType & value, CovariantVectorType & derivativeValue) const
   {
     using SupportType = Support<VOrder>;
-    const SupportType  support(*this, x);
-    const TImageType & image = *this->GetInputImage();
-    const auto &       spacing = image.GetSpacing();
-    value = 0.0;
-    derivativeValue[0] = 0.0;
+    const SupportType support(*this, x);
+    double            interpolated = 0.0;
+    double            derivative[SupportType::Dimension]{};
     for (unsigned int p = 0; p < SupportType::NumberOfPoints; ++p)
     {
-      double w = support.Weights[0][SupportType::Position(p, 0)];
-      double w1 = support.DerivativeWeights[0][SupportType::Position(p, 0)];
-      for (unsigned int n = 1; n < SupportType::Dimension; ++n)
+      const double coefficient = support.Coefficients[p];
+      double       w = 1.0;
+      for (unsigned int n = 0; n < SupportType::Dimension; ++n)
       {
-        const double tmpW = support.Weights[n][SupportType::Position(p, n)];
-        w *= tmpW;
-        w1 *= tmpW;
+        w *= support.Weights[n][SupportType::Position(p, n)];
       }
-      value += w * support.Coefficients[p];
-      derivativeValue[0] += w1 * support.Coefficients[p];
-    }
-    derivativeValue[0] /= spacing[0];
-    for (unsigned int n = 1; n < SupportType::Dimension; ++n)
-    {
-      derivativeValue[n] = 0.0;
-      for (unsigned int p = 0; p < SupportType::NumberOfPoints; ++p)
+      interpolated += w * coefficient;
+      for (unsigned int n = 0; n < SupportType::Dimension; ++n)
       {
         double w1 = 1.0;
         for (unsigned int n1 = 0; n1 < SupportType::Dimension; ++n1)
@@ -343,9 +336,14 @@ private:
           const unsigned int k = SupportType::Position(p, n1);
           w1 *= n1 == n ? support.DerivativeWeights[n1][k] : support.Weights[n1][k];
         }
-        derivativeValue[n] += support.Coefficients[p] * w1;
+        derivative[n] += w1 * coefficient;
       }
-      derivativeValue[n] /= spacing[n];
+    }
+    const TImageType & image = *this->GetInputImage();
+    value = interpolated;
+    for (unsigned int n = 0; n < SupportType::Dimension; ++n)
+    {
+      derivativeValue[n] = derivative[n] / image.GetSpacing()[n];
     }
     if (this->GetUseImageDirection())
     {
