@@ -103,7 +103,6 @@ TRANSFORMIX::TransformImage(ImagePointer                          inputImage,
   /** Initialize. */
   int             returndummy = 0;
   ArgumentMapType argMap;
-  bool            outFolderPresent = false;
   std::string     outFolder = "";
   std::string     logFileName = "";
 
@@ -120,8 +119,6 @@ TRANSFORMIX::TransformImage(ImagePointer                          inputImage,
     {
       value.append("/");
     }
-
-    outFolderPresent = true;
   }
   else
   {
@@ -162,23 +159,20 @@ TRANSFORMIX::TransformImage(ImagePointer                          inputImage,
     }
     else
     {
-      if (performLogging)
-      {
-        logFileName = outFolder + "transformix.log";
-      }
+      logFileName = outFolder + "transformix.log";
     }
   }
 
   /** Setup the log system. */
   const elx::log::guard logGuard{};
-  int                   returndummy2 = elx::log::setup(logFileName, performLogging, performCout) ? 0 : 1;
-  if (returndummy2 && performCout)
+
+  if (!elx::log::setup(logFileName, performLogging, performCout))
   {
     if (performCout)
     {
       std::cerr << "ERROR while setting up the log system." << std::endl;
     }
-    return (returndummy2);
+    return 1;
   }
   elx::log::info("");
 

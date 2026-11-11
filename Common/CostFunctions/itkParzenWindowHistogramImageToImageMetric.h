@@ -271,6 +271,11 @@ protected:
 
   /** Variables for the pdfs (actually: histograms). */
   mutable MarginalPDFType       m_FixedImageMarginalPDF{};
+
+  /** Where the transform sends each sample: kept by the multi-threaded ComputePDFs() for a pass over
+   * the same samples with the same parameters, as the one that computes the derivative; empty otherwise.
+   */
+  mutable std::vector<MovingImagePointType> m_MappedPoints{};
   mutable MarginalPDFType       m_MovingImageMarginalPDF{};
   JointPDFPointer               m_JointPDF{ nullptr };
   JointPDFDerivativesPointer    m_JointPDFDerivatives{ nullptr };

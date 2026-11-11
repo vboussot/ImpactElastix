@@ -953,6 +953,7 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ComputePDFs(
   /** Option for now to still use the single threaded code. */
   if (!Superclass::m_UseMultiThread)
   {
+    m_MappedPoints.clear();
     return this->ComputePDFsSingleThreaded(parameters);
   }
 
@@ -970,6 +971,7 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ComputePDFs(
    * - Now you can call GetValueAndDerivative multi-threaded.
    */
   this->BeforeThreadedGetValueAndDerivative(parameters);
+  m_MappedPoints.resize(this->GetImageSampler()->GetOutput()->Size());
 
   // Set up threader and launch multi-threaded JointPDF computation:
   this->m_Threader->SetSingleMethodAndExecute(
@@ -1005,14 +1007,28 @@ ParzenWindowHistogramImageToImageMetric<TFixedImage, TMovingImage>::ThreadedComp
   unsigned long numberOfPixelsCounted = 0;
 
   /** Loop over sample container and compute contribution of each sample to pdfs. */
-  for (const auto & sample : this->Superclass::GetRangeOfSamples(threadId))
+  const auto * const firstSample = this->GetImageSampler()->GetOutput()->CastToSTLConstContainer().data();
+  const auto         samples = this->Superclass::GetRangeOfSamples(threadId);
+  auto               transformed = samples.begin();
+  for (auto iterator = samples.begin(); iterator != samples.end(); ++iterator)
   {
-    /** Read fixed coordinates and initialize some variables. */
-    const FixedImagePointType & fixedPoint = sample.m_ImageCoordinates;
-    RealType                    movingImageValue;
+    const auto & sample = *iterator;
+    RealType     movingImageValue;
 
-    /** Transform point. */
-    const MovingImagePointType mappedPoint = this->TransformPoint(fixedPoint);
+    /** Transform the points of a few samples at a time, keep them for the next pass over the
+     * samples, and ask for the moving image around them while the samples before are evaluated.
+     */
+    if (iterator == transformed)
+    {
+      for (const auto end = transformed + std::min<std::ptrdiff_t>(samples.end() - transformed, 32); transformed != end;
+           ++transformed)
+      {
+        const MovingImagePointType point = this->TransformPoint(transformed->m_ImageCoordinates);
+        m_MappedPoints[&*transformed - firstSample] = point;
+        this->PrefetchMovingImage(point);
+      }
+    }
+    const MovingImagePointType & mappedPoint = m_MappedPoints[&sample - firstSample];
 
     /** Check if the point is inside the moving mask. */
     bool sampleOk = this->IsInsideMovingMask(mappedPoint);

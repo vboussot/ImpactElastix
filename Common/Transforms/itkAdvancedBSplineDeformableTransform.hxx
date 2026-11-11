@@ -163,40 +163,48 @@ AdvancedBSplineDeformableTransform<TScalarType, NDimensions, VSplineOrder>::Tran
   const WeightsType weights = m_WeightsFunction->Evaluate(cindex, supportIndex);
 
   // For each dimension, correlate coefficient with weights
-  const RegionType supportRegion(supportIndex, WeightsFunctionType::SupportSize);
 
   OutputPointType outputPoint{};
 
-  /** Create iterators over the coefficient images. */
-  using IteratorType = ImageScanlineConstIterator<ImageType>;
-  IteratorType  iterators[SpaceDimension];
-  unsigned long counter = 0;
-
+  /** The coefficients under the support region, read where they are in the buffers of the coefficient
+   * images, a line of the support after the other: the sum of each coordinate takes its terms in the
+   * order an iterator over the region gives them.
+   */
+  const ImageType &             grid = *Superclass::m_CoefficientImages[0];
+  const OffsetValueType * const strides = grid.GetOffsetTable();
+  OffsetValueType               line = grid.ComputeOffset(supportIndex);
+  const PixelType *             coefficients[SpaceDimension];
   for (unsigned int j = 0; j < SpaceDimension; ++j)
   {
-    iterators[j] = IteratorType(Superclass::m_CoefficientImages[j], supportRegion);
+    coefficients[j] = Superclass::m_CoefficientImages[j]->GetBufferPointer();
   }
-
-  /** Loop over the support region. */
-  while (!iterators[0].IsAtEnd())
+  const auto    supportSize = WeightsFunctionType::SupportSize;
+  unsigned int  position[SpaceDimension] = {};
+  unsigned long counter = 0;
+  for (bool lines = true; lines;)
   {
-    while (!iterators[0].IsAtEndOfLine())
+    for (unsigned int i = 0; i < supportSize[0]; ++i, ++counter)
     {
       // multiply weight with coefficient to compute displacement
       for (unsigned int j = 0; j < SpaceDimension; ++j)
       {
-        outputPoint[j] += static_cast<ScalarType>(weights[counter] * iterators[j].Value());
-        ++iterators[j];
+        outputPoint[j] += static_cast<ScalarType>(weights[counter] * coefficients[j][line + i]);
       }
-      ++counter;
     } // end of scanline
 
-    for (auto & iterator : iterators)
+    /** The next line of the support: a step along the first axis that has one left. */
+    lines = false;
+    for (unsigned int d = 1; d < SpaceDimension && !lines; ++d)
     {
-      iterator.NextLine();
+      line += strides[d];
+      lines = ++position[d] < supportSize[d];
+      if (!lines)
+      {
+        line -= strides[d] * static_cast<OffsetValueType>(supportSize[d]);
+        position[d] = 0;
+      }
     }
-
-  } // end while
+  }
 
   // The output point is the start point + displacement.
   for (unsigned int j = 0; j < SpaceDimension; ++j)

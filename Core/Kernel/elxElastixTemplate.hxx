@@ -590,6 +590,9 @@ ElastixTemplate<TFixedImage, TMovingImage>::AfterEachResolution()
                                  << " (ITK initialization and iterating): "
                                  << ElastixBase::m_ResolutionTimer.GetMean());
 
+  // The images are read in order again until the next iterations: for the next resolution, the next pyramids.
+  itk::FileMappedScratch::ReadInOrder(true);
+
   /** Call all the AfterEachResolution() functions. */
   this->AfterEachResolutionBase();
   CallInEachComponent(&BaseComponentType::AfterEachResolutionBase);

@@ -56,20 +56,43 @@ ImageRandomCoordinateSampler<TInputImage>::GenerateData()
 
   samples.resize(this->Superclass::m_NumberOfSamples);
 
-  /** Get a handle to the mask. If there was no mask supplied we exercise a multi-threaded version. */
+  /** Get a handle to the mask. */
   const MaskType * const mask = this->Superclass::GetMask();
-  if (mask == nullptr && Superclass::m_UseMultiThread)
+
+  /** The multi-threaded version: the coordinates are drawn first, those inside the mask when there is
+   * one, as when the samples are filled one at a time; the image is then interpolated at them in
+   * parallel, each one a place to wait for when the image is not in memory.
+   */
+  if (Superclass::m_UseMultiThread)
   {
-    /** Clear the random number list. */
     m_RandomCoordinates.clear();
     m_RandomCoordinates.reserve(this->m_NumberOfSamples);
 
-    /** Fill the list with random numbers. */
-    for (unsigned long i = 0; i < this->m_NumberOfSamples; ++i)
+    if (mask != nullptr)
     {
+      mask->UpdateSource();
+    }
+    const unsigned long maximumNumberOfSamplesToTry = 10 * this->GetNumberOfSamples();
+    unsigned long       numberOfSamplesTried = 0;
+    InputImagePointType point;
+    while (m_RandomCoordinates.size() < this->m_NumberOfSamples)
+    {
+      /** Check if we are not trying eternally to find a valid point. */
+      if (mask != nullptr && ++numberOfSamplesTried > maximumNumberOfSamplesToTry)
+      {
+        samples.resize(m_RandomCoordinates.size());
+        itkExceptionMacro("Could not find enough image samples within reasonable time. Probably the mask is too small");
+      }
       InputImageContinuousIndexType randomCIndex;
-
       this->GenerateRandomCoordinate(smallestContIndex, largestContIndex, randomCIndex);
+      if (mask != nullptr)
+      {
+        inputImage.TransformContinuousIndexToPhysicalPoint(randomCIndex, point);
+        if (!interpolator->IsInsideBuffer(randomCIndex) || !mask->IsInsideInWorldSpace(point))
+        {
+          continue;
+        }
+      }
       m_RandomCoordinates.push_back(randomCIndex);
     }
 

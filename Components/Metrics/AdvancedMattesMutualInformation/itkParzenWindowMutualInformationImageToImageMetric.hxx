@@ -444,6 +444,10 @@ ParzenWindowMutualInformationImageToImageMetric<TFixedImage, TMovingImage>::Thre
   // Create a buffer of Parzen values for both the fixed and the moving image.
   const auto parzenValues = make_unique_for_overwrite<PDFValueType[]>(jointPDFWindowSize[0] + jointPDFWindowSize[1]);
 
+  /** The samples are those ComputePDFs() transformed, with the same parameters: their mapped points are its own. */
+  const auto & samples = this->GetImageSampler()->GetOutput()->CastToSTLConstContainer();
+  const bool   mapped = Superclass::m_MappedPoints.size() == samples.size();
+
   /** Loop over sample container and compute contribution of each sample to pdfs. */
   for (const auto & sample : this->Superclass::GetRangeOfSamples(threadId))
   {
@@ -452,8 +456,13 @@ ParzenWindowMutualInformationImageToImageMetric<TFixedImage, TMovingImage>::Thre
     RealType                    movingImageValue;
     MovingImageDerivativeType   movingImageDerivative;
 
-    /** Transform point. */
-    const MovingImagePointType mappedPoint = this->TransformPoint(fixedPoint);
+    /** Transform point, and ask for the moving image around the point of a sample ahead. */
+    const MovingImagePointType mappedPoint =
+      mapped ? Superclass::m_MappedPoints[&sample - samples.data()] : this->TransformPoint(fixedPoint);
+    if (const size_t ahead = &sample - samples.data() + 8; mapped && ahead < samples.size())
+    {
+      this->PrefetchMovingImage(Superclass::m_MappedPoints[ahead]);
+    }
 
     /** Check if the point is inside the moving mask. */
     bool sampleOk = this->IsInsideMovingMask(mappedPoint);

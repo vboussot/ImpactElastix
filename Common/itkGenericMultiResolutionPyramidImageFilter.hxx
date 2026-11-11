@@ -24,6 +24,8 @@
 #include "itkShrinkImageFilter.h"
 #include "itkImageAlgorithm.h"
 
+#include <type_traits>
+
 namespace itk
 {
 /**
@@ -273,14 +275,22 @@ GenericMultiResolutionPyramidImageFilter<TInputImage, TOutputImage, TPrecisionTy
 
       if (this->ComputeForCurrentLevel(level))
       {
-        OutputImagePointer outputPtr = this->GetOutput(level);
-        outputPtr->SetBufferedRegion(input->GetLargestPossibleRegion());
-        outputPtr->Allocate();
+        if constexpr (std::is_same_v<InputImageType, OutputImageType>)
+        {
+          // Neither smoothed nor rescaled, the level is the input: it shares its pixels.
+          this->GraftNthOutput(level, const_cast<InputImageType *>(input.GetPointer()));
+        }
+        else
+        {
+          OutputImagePointer outputPtr = this->GetOutput(level);
+          outputPtr->SetBufferedRegion(input->GetLargestPossibleRegion());
+          outputPtr->Allocate();
 
-        ImageAlgorithm::Copy(input.GetPointer(),
-                             outputPtr.GetPointer(),
-                             input->GetLargestPossibleRegion(),
-                             outputPtr->GetLargestPossibleRegion());
+          ImageAlgorithm::Copy(input.GetPointer(),
+                               outputPtr.GetPointer(),
+                               input->GetLargestPossibleRegion(),
+                               outputPtr->GetLargestPossibleRegion());
+        }
       }
     }
     return; // We are done, return

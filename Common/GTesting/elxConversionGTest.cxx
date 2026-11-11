@@ -157,11 +157,8 @@ Expect_lossless_round_trip_of_unsigned_parameter_values()
   using NumericLimits = std::numeric_limits<TUnsignedInteger>;
   static_assert(!NumericLimits::is_signed, "This function is only meant to test unsigned types!");
 
-  // Note: the static_cast for `NumericLimits::max() - 1` is a workaround for
-  // the following compile error from Visual C++ 2017:
-  // > error C2398: Element '3': conversion from 'int' to 'TUnsignedInteger' requires a narrowing conversion
   Expect_lossless_round_trip_of_parameter_values<TUnsignedInteger>(
-    { 0, 1, static_cast<TUnsignedInteger>(NumericLimits::max() - 1), NumericLimits::max() });
+    { 0, 1, TUnsignedInteger{ NumericLimits::max() - 1 }, NumericLimits::max() });
 }
 
 
@@ -174,8 +171,8 @@ Expect_lossless_round_trip_of_signed_integer_parameter_values()
   static_assert(NumericLimits::is_signed && NumericLimits::is_integer,
                 "This function is only meant to test signed integer types!");
 
-  const auto minValue = NumericLimits::min();
-  const auto maxValue = NumericLimits::max();
+  constexpr auto minValue = NumericLimits::min();
+  constexpr auto maxValue = NumericLimits::max();
 
   Expect_lossless_round_trip_of_parameter_values<TSignedInteger>(
     { minValue, minValue + 1, -1, 0, 1, maxValue - 1, maxValue });
@@ -188,15 +185,11 @@ Expect_parameter_with_decimal_point_and_trailing_zeros_can_be_read_as_integer()
 {
   using NumericLimits = std::numeric_limits<TInteger>;
 
-  const auto minValue = NumericLimits::min();
-  const auto maxValue = NumericLimits::max();
+  constexpr auto minValue = NumericLimits::min();
+  constexpr auto maxValue = NumericLimits::max();
 
-  for (const TInteger integer : { minValue,
-                                  static_cast<TInteger>(minValue + 1),
-                                  TInteger{},
-                                  TInteger{ 1 },
-                                  static_cast<TInteger>(maxValue - 1),
-                                  maxValue })
+  for (const TInteger integer :
+       { minValue, TInteger{ minValue + 1 }, TInteger{}, TInteger{ 1 }, TInteger{ maxValue - 1 }, maxValue })
   {
     for (unsigned numberOfTrailingZeros{}; numberOfTrailingZeros <= 2; ++numberOfTrailingZeros)
     {
@@ -379,7 +372,6 @@ GTEST_TEST(Conversion, ToString)
   static constexpr auto expectedPrecision = 16;
   static_assert(expectedPrecision == std::numeric_limits<double>::digits10 + 1,
                 "The expected precision for double floating point numbers");
-  const auto expectedString = "0." + std::string(expectedPrecision, '3');
 
   EXPECT_EQ(Conversion::ToString(+0.0), "0");
   EXPECT_EQ(Conversion::ToString(-0.0), "0");

@@ -23,6 +23,7 @@
 
 #include "itkAdvancedRayCastInterpolateImageFunction.h"
 #include "itkComputeImageExtremaFilter.h"
+#include "itkFileMappedImageContainer.h"
 #include <itkDeref.h>
 
 #include <algorithm> // For min.
@@ -159,6 +160,13 @@ AdvancedImageToImageMetric<TFixedImage, TMovingImage>::InitializeLimiters()
     m_FixedImageTrueMax = computeFixedImageExtrema->GetMaximum();
     m_FixedImageTrueMin = computeFixedImageExtrema->GetMinimum();
 
+    if (m_FixedImageTrueMin >= m_FixedImageTrueMax)
+    {
+      itkExceptionMacro("Cannot process the fixed image. The minimum pixel value ("
+                        << m_FixedImageTrueMin << ") should be less than maximum pixel value (" << m_FixedImageTrueMax
+                        << ")!");
+    }
+
     m_FixedImageMinLimit = static_cast<FixedImageLimiterOutputType>(
       m_FixedImageTrueMin - m_FixedLimitRangeRatio * (m_FixedImageTrueMax - m_FixedImageTrueMin));
     m_FixedImageMaxLimit = static_cast<FixedImageLimiterOutputType>(
@@ -187,6 +195,13 @@ AdvancedImageToImageMetric<TFixedImage, TMovingImage>::InitializeLimiters()
 
     m_MovingImageTrueMax = computeMovingImageExtrema->GetMaximum();
     m_MovingImageTrueMin = computeMovingImageExtrema->GetMinimum();
+
+    if (m_MovingImageTrueMin >= m_MovingImageTrueMax)
+    {
+      itkExceptionMacro("Cannot process the moving image. The minimum pixel value ("
+                        << m_MovingImageTrueMin << ") should be less than maximum pixel value (" << m_MovingImageTrueMax
+                        << ")!");
+    }
 
     m_MovingImageMinLimit = static_cast<MovingImageLimiterOutputType>(
       m_MovingImageTrueMin - m_MovingLimitRangeRatio * (m_MovingImageTrueMax - m_MovingImageTrueMin));
@@ -254,6 +269,8 @@ AdvancedImageToImageMetric<TFixedImage, TMovingImage>::CheckForBSplineInterpolat
   {
     itkDebugMacro("Interpolator is not B-spline");
   }
+
+  m_FrugalBSplineInterpolator = dynamic_cast<decltype(m_FrugalBSplineInterpolator)>(interpolator);
 
   m_BSplineInterpolatorFloat = dynamic_cast<BSplineInterpolatorFloatType *>(interpolator);
   if (m_BSplineInterpolatorFloat)
@@ -617,6 +634,8 @@ AdvancedImageToImageMetric<TFixedImage, TMovingImage>::BeforeThreadedGetValueAnd
     {
       m_ImageSampler->Update();
     }
+    // The samples are places apart: an image mapped from a file is read a page at a time.
+    FileMappedScratch::ReadInOrder(false);
   }
 
 } // end BeforeThreadedGetValueAndDerivative()

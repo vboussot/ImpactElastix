@@ -126,6 +126,14 @@ protected:
   void
   PrintSelf(std::ostream & os, Indent indent) const override;
 
+  /** The seed of an update: the optional seed, or else one drawn from this sampler's generator (elastix's, seeded by
+   * RandomSeed), so that every update draws other samples, reproducibly. */
+  SeedIntegerType
+  NextSeed()
+  {
+    return m_OptionalSeed ? *m_OptionalSeed : GetRandomVariateGenerator().GetIntegerVariate();
+  }
+
   /** Member variable used when threading. */
   std::vector<double> m_RandomNumberList{};
 
