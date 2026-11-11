@@ -196,7 +196,8 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
       [&](const SizeValueType owner) {
         JacobianType               jacj(outdim, sizejacind, 0.0);
         NonZeroJacobianIndicesType jacind(sizejacind);
-        NonZeroJacobianIndicesType prevjacind(sizejacind);
+        /** The indices of no sample: the first sample starts a sum. */
+        NonZeroJacobianIndicesType prevjacind(sizejacind, numberOfParameters);
 
         /** J'J of the samples in a row that have the same nonzero Jacobian indices: the rows of this thread. */
         CovarianceMatrixType jactjac(sizejacind, sizejacind, 0.0);
