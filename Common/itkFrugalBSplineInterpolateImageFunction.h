@@ -42,6 +42,8 @@ namespace itk
  *     has the coefficients computed for that one.
  * \li The lines of an axis do not depend on each other: they are filtered in parallel, each one
  *     as BSplineDecompositionImageFilter filters it.
+ * \li At order 1 or 3 a value and its derivative read the coefficients around a point once,
+ *     straight from their buffer.
  *
  * The values are those of the superclass.
  */
@@ -102,7 +104,210 @@ protected:
   FrugalBSplineInterpolateImageFunction() = default;
   ~FrugalBSplineInterpolateImageFunction() override = default;
 
+  using typename Superclass::ContinuousIndexType;
+  using typename Superclass::CovariantVectorType;
+  using typename Superclass::OutputType;
+
+  OutputType
+  EvaluateAtContinuousIndexInternal(const ContinuousIndexType & x,
+                                    vnl_matrix<long> &          evaluateIndex,
+                                    vnl_matrix<double> &        weights) const override
+  {
+    switch (this->m_SplineOrder)
+    {
+      case 1:
+        return this->template Value<1>(x);
+      case 3:
+        return this->template Value<3>(x);
+      default:
+        return Superclass::EvaluateAtContinuousIndexInternal(x, evaluateIndex, weights);
+    }
+  }
+
+  void
+  EvaluateValueAndDerivativeAtContinuousIndexInternal(const ContinuousIndexType & x,
+                                                      OutputType &                value,
+                                                      CovariantVectorType &       derivativeValue,
+                                                      vnl_matrix<long> &          evaluateIndex,
+                                                      vnl_matrix<double> &        weights,
+                                                      vnl_matrix<double> &        weightsDerivative) const override
+  {
+    switch (this->m_SplineOrder)
+    {
+      case 1:
+        this->template ValueAndDerivative<1>(x, value, derivativeValue);
+        break;
+      case 3:
+        this->template ValueAndDerivative<3>(x, value, derivativeValue);
+        break;
+      default:
+        Superclass::EvaluateValueAndDerivativeAtContinuousIndexInternal(
+          x, value, derivativeValue, evaluateIndex, weights, weightsDerivative);
+    }
+  }
+
 private:
+  /** What the superclass computes around a continuous index at order 1 or 3: the weights of each
+   * axis, those of its derivative, and the coefficients of the points of the support, the first
+   * axis fastest, with its mirror boundaries. The coefficients are read once, from the buffer of
+   * their image, where the superclass looks each of them up for the value and for each axis of
+   * the derivative.
+   */
+  template <unsigned int VOrder>
+  struct Support
+  {
+    static constexpr unsigned int Dimension = Superclass::ImageDimension;
+    static constexpr unsigned int Length = VOrder + 1;
+    static constexpr unsigned int BitsPerAxis = VOrder == 1 ? 1 : 2;
+    static constexpr unsigned int NumberOfPoints = 1u << (Dimension * BitsPerAxis);
+
+    /** The position along an axis of a point of the support. */
+    static constexpr unsigned int
+    Position(const unsigned int point, const unsigned int axis)
+    {
+      return (point >> (axis * BitsPerAxis)) & VOrder;
+    }
+
+    double Weights[Dimension][Length];
+    double DerivativeWeights[Dimension][Length];
+    double Coefficients[NumberOfPoints];
+
+    Support(const Self & function, const ContinuousIndexType & x)
+    {
+      static_assert(VOrder == 1 || VOrder == 3);
+      const CoefficientImageType &  image = *function.m_Coefficients;
+      const auto &                  startIndex = function.GetStartIndex();
+      const auto &                  endIndex = function.GetEndIndex();
+      const auto &                  bufferIndex = image.GetBufferedRegion().GetIndex();
+      const OffsetValueType * const strides = image.GetOffsetTable();
+      OffsetValueType               offsets[Dimension][Length];
+      for (unsigned int n = 0; n < Dimension; ++n)
+      {
+        const long first = static_cast<long>(std::floor(static_cast<float>(x[n]))) - VOrder / 2;
+        if constexpr (VOrder == 1)
+        {
+          const double w = x[n] - static_cast<double>(first);
+          Weights[n][1] = w;
+          Weights[n][0] = 1.0 - w;
+          DerivativeWeights[n][0] = -1.0;
+          DerivativeWeights[n][1] = 1.0;
+        }
+        else
+        {
+          double w = x[n] - static_cast<double>(first + 1);
+          Weights[n][3] = (1.0 / 6.0) * w * w * w;
+          Weights[n][0] = (1.0 / 6.0) + 0.5 * w * (w - 1.0) - Weights[n][3];
+          Weights[n][2] = w + Weights[n][0] - 2.0 * Weights[n][3];
+          Weights[n][1] = 1.0 - Weights[n][0] - Weights[n][2] - Weights[n][3];
+          w = x[n] + .5 - static_cast<double>(first + 2);
+          const double w2 = 0.75 - w * w;
+          const double w3 = 0.5 * (w - w2 + 1.0);
+          const double w1 = 1.0 - w2 - w3;
+          DerivativeWeights[n][0] = 0.0 - w1;
+          DerivativeWeights[n][1] = w1 - w2;
+          DerivativeWeights[n][2] = w2 - w3;
+          DerivativeWeights[n][3] = w3;
+        }
+        for (unsigned int k = 0; k < Length; ++k)
+        {
+          long index = first + k;
+          if (function.m_DataLength[n] == 1)
+          {
+            index = 0;
+          }
+          else
+          {
+            if (index < startIndex[n])
+            {
+              index = startIndex[n] + (startIndex[n] - index);
+            }
+            if (index >= endIndex[n])
+            {
+              index = endIndex[n] - (index - endIndex[n]);
+            }
+          }
+          offsets[n][k] = (index - bufferIndex[n]) * strides[n];
+        }
+      }
+      const auto * const buffer = image.GetBufferPointer();
+      for (unsigned int p = 0; p < NumberOfPoints; ++p)
+      {
+        OffsetValueType offset = 0;
+        for (unsigned int n = 0; n < Dimension; ++n)
+        {
+          offset += offsets[n][Position(p, n)];
+        }
+        Coefficients[p] = buffer[offset];
+      }
+    }
+  };
+
+  /** The value at a continuous index, summed as the superclass sums it. */
+  template <unsigned int VOrder>
+  OutputType
+  Value(const ContinuousIndexType & x) const
+  {
+    using SupportType = Support<VOrder>;
+    const SupportType support(*this, x);
+    double            interpolated = 0.0;
+    for (unsigned int p = 0; p < SupportType::NumberOfPoints; ++p)
+    {
+      double w = 1.0;
+      for (unsigned int n = 0; n < SupportType::Dimension; ++n)
+      {
+        w *= support.Weights[n][SupportType::Position(p, n)];
+      }
+      interpolated += w * support.Coefficients[p];
+    }
+    return interpolated;
+  }
+
+  /** The value and the derivative at a continuous index, summed as the superclass sums them. */
+  template <unsigned int VOrder>
+  void
+  ValueAndDerivative(const ContinuousIndexType & x, OutputType & value, CovariantVectorType & derivativeValue) const
+  {
+    using SupportType = Support<VOrder>;
+    const SupportType  support(*this, x);
+    const TImageType & image = *this->GetInputImage();
+    const auto &       spacing = image.GetSpacing();
+    value = 0.0;
+    derivativeValue[0] = 0.0;
+    for (unsigned int p = 0; p < SupportType::NumberOfPoints; ++p)
+    {
+      double w = support.Weights[0][SupportType::Position(p, 0)];
+      double w1 = support.DerivativeWeights[0][SupportType::Position(p, 0)];
+      for (unsigned int n = 1; n < SupportType::Dimension; ++n)
+      {
+        const double tmpW = support.Weights[n][SupportType::Position(p, n)];
+        w *= tmpW;
+        w1 *= tmpW;
+      }
+      value += w * support.Coefficients[p];
+      derivativeValue[0] += w1 * support.Coefficients[p];
+    }
+    derivativeValue[0] /= spacing[0];
+    for (unsigned int n = 1; n < SupportType::Dimension; ++n)
+    {
+      derivativeValue[n] = 0.0;
+      for (unsigned int p = 0; p < SupportType::NumberOfPoints; ++p)
+      {
+        double w1 = 1.0;
+        for (unsigned int n1 = 0; n1 < SupportType::Dimension; ++n1)
+        {
+          const unsigned int k = SupportType::Position(p, n1);
+          w1 *= n1 == n ? support.DerivativeWeights[n1][k] : support.Weights[n1][k];
+        }
+        derivativeValue[n] += support.Coefficients[p] * w1;
+      }
+      derivativeValue[n] /= spacing[n];
+    }
+    if (this->GetUseImageDirection())
+    {
+      derivativeValue = image.TransformLocalVectorToPhysicalVector(derivativeValue);
+    }
+  }
+
   /** The poles of the B-spline of an order, as BSplineDecompositionImageFilter has them. */
   static std::vector<double>
   Poles(const int order)
