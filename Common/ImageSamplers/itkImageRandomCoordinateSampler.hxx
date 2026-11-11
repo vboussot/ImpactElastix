@@ -59,112 +59,55 @@ ImageRandomCoordinateSampler<TInputImage>::GenerateData()
   /** Get a handle to the mask. */
   const MaskType * const mask = this->Superclass::GetMask();
 
-  /** The multi-threaded version: the coordinates are drawn first, those inside the mask when there is
-   * one, as when the samples are filled one at a time; the image is then interpolated at them in
-   * parallel, each one a place to wait for when the image is not in memory.
+  /** The coordinates are drawn first, those inside the mask when there is one; the image is then
+   * interpolated at them, in parallel when multi-threaded, each one a place to wait for when the
+   * image is not in memory.
    */
-  if (Superclass::m_UseMultiThread)
-  {
-    m_RandomCoordinates.clear();
-    m_RandomCoordinates.reserve(this->m_NumberOfSamples);
+  m_RandomCoordinates.clear();
+  m_RandomCoordinates.reserve(this->m_NumberOfSamples);
 
+  if (mask != nullptr)
+  {
+    mask->UpdateSource();
+  }
+  const unsigned long maximumNumberOfSamplesToTry = 10 * this->GetNumberOfSamples();
+  unsigned long       numberOfSamplesTried = 0;
+  InputImagePointType point;
+  while (m_RandomCoordinates.size() < this->m_NumberOfSamples)
+  {
+    /** Check if we are not trying eternally to find a valid point. */
+    if (mask != nullptr && ++numberOfSamplesTried > maximumNumberOfSamplesToTry)
+    {
+      samples.resize(m_RandomCoordinates.size());
+      itkExceptionMacro("Could not find enough image samples within reasonable time. Probably the mask is too small");
+    }
+    InputImageContinuousIndexType randomCIndex;
+    this->GenerateRandomCoordinate(smallestContIndex, largestContIndex, randomCIndex);
     if (mask != nullptr)
     {
-      mask->UpdateSource();
-    }
-    const unsigned long maximumNumberOfSamplesToTry = 10 * this->GetNumberOfSamples();
-    unsigned long       numberOfSamplesTried = 0;
-    InputImagePointType point;
-    while (m_RandomCoordinates.size() < this->m_NumberOfSamples)
-    {
-      /** Check if we are not trying eternally to find a valid point. */
-      if (mask != nullptr && ++numberOfSamplesTried > maximumNumberOfSamplesToTry)
+      inputImage.TransformContinuousIndexToPhysicalPoint(randomCIndex, point);
+      if (!interpolator->IsInsideBuffer(randomCIndex) || !mask->IsInsideInWorldSpace(point))
       {
-        samples.resize(m_RandomCoordinates.size());
-        itkExceptionMacro("Could not find enough image samples within reasonable time. Probably the mask is too small");
+        continue;
       }
-      InputImageContinuousIndexType randomCIndex;
-      this->GenerateRandomCoordinate(smallestContIndex, largestContIndex, randomCIndex);
-      if (mask != nullptr)
-      {
-        inputImage.TransformContinuousIndexToPhysicalPoint(randomCIndex, point);
-        if (!interpolator->IsInsideBuffer(randomCIndex) || !mask->IsInsideInWorldSpace(point))
-        {
-          continue;
-        }
-      }
-      m_RandomCoordinates.push_back(randomCIndex);
     }
+    m_RandomCoordinates.push_back(randomCIndex);
+  }
 
+  if (Superclass::m_UseMultiThread)
+  {
     UserData userData{ m_RandomCoordinates, inputImage, *interpolator, samples };
 
     Deref(this->ProcessObject::GetMultiThreader()).SetSingleMethodAndExecute(&Self::ThreaderCallback, &userData);
     return;
   }
 
-  InputImageContinuousIndexType sampleContIndex;
-  /** Fill the sample container. */
-  if (mask == nullptr)
+  for (size_t i = 0; i < samples.size(); ++i)
   {
-    /** Start looping over the sample container. */
-    for (auto & sample : samples)
-    {
-      /** Make a reference to the current sample in the container. */
-      InputImagePointType &  samplePoint = sample.m_ImageCoordinates;
-      ImageSampleValueType & sampleValue = sample.m_ImageValue;
-
-      /** Walk over the image until we find a valid point. */
-      this->GenerateRandomCoordinate(smallestContIndex, largestContIndex, sampleContIndex);
-
-      /** Convert to point */
-      inputImage.TransformContinuousIndexToPhysicalPoint(sampleContIndex, samplePoint);
-
-      /** Compute the value at the continuous index. */
-      sampleValue = static_cast<ImageSampleValueType>(this->m_Interpolator->EvaluateAtContinuousIndex(sampleContIndex));
-
-    } // end for loop
-  } // end if no mask
-  else
-  {
-    /** Update the mask. */
-    mask->UpdateSource();
-
-    /** Set up some variable that are used to make sure we are not forever
-     * walking around on this image, trying to look for valid samples. */
-    unsigned long numberOfSamplesTried = 0;
-    unsigned long maximumNumberOfSamplesToTry = 10 * this->GetNumberOfSamples();
-
-    /** Start looping over the sample container */
-    for (auto & sample : samples)
-    {
-      /** Make a reference to the current sample in the container. */
-      InputImagePointType &  samplePoint = sample.m_ImageCoordinates;
-      ImageSampleValueType & sampleValue = sample.m_ImageValue;
-
-      /** Walk over the image until we find a valid point */
-      do
-      {
-        /** Check if we are not trying eternally to find a valid point. */
-        ++numberOfSamplesTried;
-        if (numberOfSamplesTried > maximumNumberOfSamplesToTry)
-        {
-          /** Squeeze the sample container to the size that is still valid. */
-          samples.resize(&sample - samples.data());
-          itkExceptionMacro(
-            "Could not find enough image samples within reasonable time. Probably the mask is too small");
-        }
-
-        /** Generate a point in the input image region. */
-        this->GenerateRandomCoordinate(smallestContIndex, largestContIndex, sampleContIndex);
-        inputImage.TransformContinuousIndexToPhysicalPoint(sampleContIndex, samplePoint);
-
-      } while (!interpolator->IsInsideBuffer(sampleContIndex) || !mask->IsInsideInWorldSpace(samplePoint));
-
-      /** Compute the value at the point. */
-      sampleValue = static_cast<ImageSampleValueType>(this->m_Interpolator->EvaluateAtContinuousIndex(sampleContIndex));
-
-    } // end for loop
-  } // end if mask
+    const InputImageContinuousIndexType & sampleCIndex = m_RandomCoordinates[i];
+    inputImage.TransformContinuousIndexToPhysicalPoint(sampleCIndex, samples[i].m_ImageCoordinates);
+    samples[i].m_ImageValue = static_cast<ImageSampleValueType>(interpolator->EvaluateAtContinuousIndex(sampleCIndex));
+  }
 
 } // end GenerateData()
 
