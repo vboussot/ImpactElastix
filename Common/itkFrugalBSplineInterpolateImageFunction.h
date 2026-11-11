@@ -77,6 +77,7 @@ public:
       {
         this->m_Coefficients = inputData;
       }
+      m_DecomposedPixels = nullptr;
     }
     else if (pixels == nullptr)
     {
@@ -94,10 +95,6 @@ public:
       m_DecomposedOrder = this->GetSplineOrder();
     }
     // The coefficients are in place: the image is set as the superclass of the superclass sets it.
-    if (pixelsAreCoefficients)
-    {
-      m_DecomposedPixels = nullptr;
-    }
     m_InputTime = inputData->GetMTime();
     this->m_DataLength = inputData->GetBufferedRegion().GetSize();
     Superclass::Superclass::SetInputImage(inputData);
@@ -353,27 +350,6 @@ private:
     }
   }
 
-  /** The poles of the B-spline of an order, as BSplineDecompositionImageFilter has them. */
-  static std::vector<double>
-  Poles(const int order)
-  {
-    switch (order)
-    {
-      case 2:
-        return { std::sqrt(8.0) - 3.0 };
-      case 3:
-        return { std::sqrt(3.0) - 2.0 };
-      case 4:
-        return { std::sqrt(664.0 - std::sqrt(438976.0)) + std::sqrt(304.0) - 19.0,
-                 std::sqrt(664.0 + std::sqrt(438976.0)) - std::sqrt(304.0) - 19.0 };
-      case 5:
-        return { std::sqrt(135.0 / 2.0 - std::sqrt(17745.0 / 4.0)) + std::sqrt(105.0 / 4.0) - 13.0 / 2.0,
-                 std::sqrt(135.0 / 2.0 + std::sqrt(17745.0 / 4.0)) - std::sqrt(105.0 / 4.0) - 13.0 / 2.0 };
-      default:
-        return {};
-    }
-  }
-
   /** The values of a line turned into its coefficients: BSplineDecompositionImageFilter's
    * DataToCoefficients1D, operation for operation, with its mirror boundaries and its tolerance.
    */
@@ -443,7 +419,6 @@ private:
     const RegionType region = image.GetBufferedRegion();
     const auto       coefficients = CoefficientImageType::New();
     coefficients->CopyInformation(&image);
-    coefficients->SetLargestPossibleRegion(image.GetLargestPossibleRegion());
     coefficients->SetBufferedRegion(region);
     coefficients->SetRequestedRegion(region);
     coefficients->Allocate();
@@ -454,7 +429,11 @@ private:
       [&](const RegionType & piece) { ImageAlgorithm::Copy(&image, coefficients.GetPointer(), piece, piece); },
       nullptr);
 
-    const std::vector<double> poles = Poles(this->GetSplineOrder());
+    // The poles of BSplineDecompositionImageFilter, which has none at order 0 or 1 and keeps those it had.
+    const auto decomposition = Superclass::CoefficientFilter::New();
+    decomposition->SetSplineOrder(this->GetSplineOrder());
+    std::vector<double> poles = decomposition->GetSplinePoles();
+    poles.resize(decomposition->GetNumberOfPoles());
     for (unsigned int axis = 0; axis < Superclass::ImageDimension && !poles.empty(); ++axis)
     {
       const SizeValueType length = region.GetSize(axis);
