@@ -27,6 +27,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <numeric>
 
 #ifndef _WIN32
@@ -87,6 +89,13 @@ GTEST_TEST(FileMappedImageContainer, MapsThePixelsOfAMetaImage)
   std::iota(pixels.begin(), pixels.end(), 0.0f);
   itk::WriteImage(image, directory + "/FileMappedPixels.mhd");
   itk::WriteImage(image, directory + "/FileMappedPixelsCompressed.mhd", true);
+  // The header of the same pixels, with the other byte order.
+  std::string swapped((std::istreambuf_iterator<char>(std::ifstream(directory + "/FileMappedPixels.mhd").rdbuf())),
+                      std::istreambuf_iterator<char>());
+  const std::string order = "BinaryDataByteOrderMSB = ";
+  const auto        value = swapped.find(order) + order.size();
+  swapped.replace(value, swapped.find('\n', value) - value, swapped.compare(value, 4, "True") == 0 ? "False" : "True");
+  std::ofstream(directory + "/FileMappedPixelsSwapped.mhd") << swapped;
   EXPECT_EQ(itk::MapImageFile<ImageType>(directory + "/FileMappedPixels.mhd"), nullptr);
 
   itk::FileMappedImageContainerFactory::MapImagesFrom(directory);
@@ -105,6 +114,7 @@ GTEST_TEST(FileMappedImageContainer, MapsThePixelsOfAMetaImage)
     EXPECT_EQ(again->GetPixel(itk::Index<3>::Filled(161)), image->GetPixel(itk::Index<3>::Filled(161)));
 
     EXPECT_EQ(itk::MapImageFile<ImageType>(directory + "/FileMappedPixelsCompressed.mhd"), nullptr);
+    EXPECT_EQ(itk::MapImageFile<ImageType>(directory + "/FileMappedPixelsSwapped.mhd"), nullptr);
     EXPECT_EQ((itk::MapImageFile<itk::Image<short, 3>>(directory + "/FileMappedPixels.mhd")), nullptr);
   }
   itk::ObjectFactoryBase::UnRegisterFactory(factory);

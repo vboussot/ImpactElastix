@@ -23,12 +23,11 @@
 #include "itkImageFileReader.h"
 #include "itkImportImageContainer.h"
 #include "itkMacro.h"
+#include "itkMetaImageIO.h"
 #include "itkObjectFactoryBase.h"
 #include "itkVersion.h"
 
-#include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <cstddef>
 #include <fstream>
 #include <mutex>
@@ -326,10 +325,10 @@ private:
 };
 
 
-
 /** The image of the MetaImage file `fileName` with its pixels mapped from the file, or null when
- * they cannot be: no FileMappedImageContainerFactory, a compressed file, another pixel type or
- * byte order than the image's, pixels in several files, an image under the mapping threshold.
+ * they cannot be: no FileMappedImageContainerFactory, compressed pixels or pixels as text, another
+ * pixel type than the image's or byte order than the machine's, pixels in several files, an image
+ * under the mapping threshold.
  * The caller then reads the file.
  */
 template <typename TImage>
@@ -338,57 +337,37 @@ MapImageFile(const std::string & fileName)
 {
   using PixelType = typename TImage::PixelType;
 
-  std::string extension = fileName.substr(std::min(fileName.size(), fileName.rfind('.') + 1));
-  std::transform(extension.begin(), extension.end(), extension.begin(), [](const unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-  if (FileMappedScratch::Directory().empty() || (extension != "mha" && extension != "mhd"))
+  if (FileMappedScratch::Directory().empty())
   {
     return nullptr;
   }
-
-  // The header is lines of "Key = Value" and ends with the line that tells where the pixels are.
-  std::ifstream header(fileName, std::ios::binary);
-  std::string   line;
-  std::string   pixels;
-  while (pixels.empty() && std::getline(header, line))
-  {
-    const auto equals = line.find(" = ");
-    if (equals == std::string::npos)
-    {
-      return nullptr;
-    }
-    const std::string key = line.substr(0, equals);
-    const std::string value = line.substr(equals + 3, line.find_last_not_of(" \r") - equals - 2);
-    if ((key == "CompressedData" && value == "True") || (key == "HeaderSize" && value != "0"))
-    {
-      return nullptr;
-    }
-    if (key == "ElementDataFile")
-    {
-      pixels = value;
-    }
-  }
-  if (pixels.empty() || pixels == "LIST" || pixels.find('%') != std::string::npos)
-  {
-    return nullptr;
-  }
-  const bool        local = pixels == "LOCAL" || pixels == "Local" || pixels == "local";
-  const std::size_t offset = local ? static_cast<std::size_t>(header.tellg()) : 0;
-  const std::string path = local ? fileName : fileName.substr(0, fileName.find_last_of("/\\") + 1) + pixels;
-
   const auto reader = ImageFileReader<TImage>::New();
   reader->SetFileName(fileName);
   reader->UpdateOutputInformation();
-  const ImageIOBase &             io = *reader->GetImageIO();
-  const typename TImage::Pointer  image = reader->GetOutput();
-  const SizeValueType             numberOfPixels = image->GetLargestPossibleRegion().GetNumberOfPixels();
-  const std::size_t               bytes = numberOfPixels * sizeof(PixelType);
-  const IOByteOrderEnum           native =
-    ByteSwapper<int>::SystemIsLittleEndian() ? IOByteOrderEnum::LittleEndian : IOByteOrderEnum::BigEndian;
-  if (io.GetComponentType() != ImageIOBase::MapPixelType<PixelType>::CType || io.GetNumberOfComponents() != 1 ||
-      io.GetNumberOfDimensions() != TImage::ImageDimension || io.GetByteOrder() != native ||
-      offset % alignof(PixelType) != 0 || bytes < FileMappedImageContainer<PixelType>::Threshold ||
+  const ImageIOBase & io = *reader->GetImageIO();
+
+  // MetaIO reads the header as the reader does: the pixels of a local file start where it stops.
+  MetaImage     header;
+  std::ifstream stream(fileName, std::ios::binary);
+  if (dynamic_cast<const MetaImageIO *>(&io) == nullptr || !header.ReadStream(0, &stream, false) || !stream)
+  {
+    return nullptr;
+  }
+  const std::string pixels = header.ElementDataFileName();
+  const bool        local = pixels == "LOCAL" || pixels == "Local" || pixels == "local";
+  const std::size_t offset = local ? static_cast<std::size_t>(stream.tellg()) : 0;
+  const std::string path = local ? fileName : fileName.substr(0, fileName.find_last_of("/\\") + 1) + pixels;
+
+  const typename TImage::Pointer image = reader->GetOutput();
+  const SizeValueType            numberOfPixels = image->GetLargestPossibleRegion().GetNumberOfPixels();
+  const std::size_t              bytes = numberOfPixels * sizeof(PixelType);
+  // Mapped pixels are read as they are in the file: raw, in the byte order of this machine, in one file.
+  if (!header.BinaryData() || header.CompressedData() ||
+      header.BinaryDataByteOrderMSB() != ByteSwapper<int>::SystemIsBigEndian() || header.HeaderSize() != 0 ||
+      pixels.compare(0, 4, "LIST") == 0 || pixels.find('%') != std::string::npos ||
+      io.GetComponentType() != ImageIOBase::MapPixelType<PixelType>::CType || io.GetNumberOfComponents() != 1 ||
+      io.GetNumberOfDimensions() != TImage::ImageDimension || offset % alignof(PixelType) != 0 ||
+      bytes < FileMappedImageContainer<PixelType>::Threshold ||
       dynamic_cast<FileMappedImageContainer<PixelType> *>(image->GetPixelContainer()) == nullptr)
   {
     return nullptr;
