@@ -101,18 +101,11 @@ main(int argc, char ** argv)
 #endif
 
     /** -outofcore takes no value: it leaves the key-value pairs the arguments are read as. */
-    std::vector<char *> arguments(argv, argv + argc);
-    const auto          outOfCoreFlag = std::find_if(arguments.begin() + 1, arguments.end(), [](const char * argument) {
-      return std::string(argument) == "-outofcore";
-    });
-    const bool          outOfCore = outOfCoreFlag != arguments.end();
-    if (outOfCore)
-    {
-      arguments.erase(outOfCoreFlag);
-      argc = static_cast<int>(arguments.size());
-      arguments.push_back(nullptr);
-      argv = arguments.data();
-    }
+    char ** const last = std::remove_if(
+      argv + 1, argv + argc, [](const char * argument) { return std::string(argument) == "-outofcore"; });
+    const bool outOfCore = last != argv + argc;
+    argc = static_cast<int>(last - argv);
+    argv[argc] = nullptr;
 
     /** Check if "--help" or "--version" was asked for. */
     if (argc == 1)
