@@ -23,7 +23,6 @@
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkRecursiveMultiResolutionPyramidImageFilter.h"
 #include "itkResampleImageFilter.h"
-#include "itkShrinkImageFilter.h"
 #include "itkStreamingImageFilter.h"
 
 #include <cstddef>
@@ -101,7 +100,9 @@ protected:
   {
     const auto & schedule = this->GetSchedule();
     const int    numberOfLevels = static_cast<int>(this->GetNumberOfLevels());
-    bool         whole = this->IsScheduleDownwardDivisible(schedule);
+    // The superclass computes the rest: levels shrunk by ShrinkImageFilter, a schedule that does not divide, a part
+    // of a level.
+    bool whole = !this->GetUseShrinkImageFilter() && this->IsScheduleDownwardDivisible(schedule);
     for (int level = 0; level < numberOfLevels; ++level)
     {
       whole = whole && this->GetOutput(level)->GetRequestedRegion() == this->GetOutput(level)->GetLargestPossibleRegion();
@@ -123,8 +124,7 @@ protected:
       for (const Levels & levels : Kept())
       {
         if (levels.input == input && levels.time == input->GetMTime() && levels.buffer == input->GetBufferPointer() &&
-            levels.schedule == schedule && levels.shrinks == this->GetUseShrinkImageFilter() &&
-            levels.maximumError == this->GetMaximumError())
+            levels.schedule == schedule && levels.maximumError == this->GetMaximumError())
         {
           kept = &levels;
         }
@@ -134,7 +134,6 @@ protected:
                      input->GetMTime(),
                      input->GetBufferPointer(),
                      schedule,
-                     this->GetUseShrinkImageFilter(),
                      this->GetMaximumError(),
                      std::vector<typename TOutputImage::Pointer>(numberOfLevels) };
 
@@ -165,22 +164,11 @@ protected:
         smoother->SetVariance(variance);
         smoother->SetInput(source);
 
-        typename ImageToImageFilter<TOutputImage, TOutputImage>::Pointer shrinker;
-        if (this->GetUseShrinkImageFilter())
-        {
-          const auto filter = ShrinkImageFilter<TOutputImage, TOutputImage>::New();
-          filter->SetShrinkFactors(factors);
-          shrinker = filter;
-        }
-        else
-        {
-          const auto filter = ResampleImageFilter<TOutputImage, TOutputImage>::New();
-          filter->SetInterpolator(LinearInterpolateImageFunction<TOutputImage, double>::New());
-          filter->SetDefaultPixelValue(0);
-          filter->SetTransform(IdentityTransform<double, ImageDimension>::New());
-          filter->SetOutputParametersFromImage(this->GetOutput(level));
-          shrinker = filter;
-        }
+        const auto shrinker = ResampleImageFilter<TOutputImage, TOutputImage>::New();
+        shrinker->SetInterpolator(LinearInterpolateImageFunction<TOutputImage, double>::New());
+        shrinker->SetDefaultPixelValue(0);
+        shrinker->SetTransform(IdentityTransform<double, ImageDimension>::New());
+        shrinker->SetOutputParametersFromImage(this->GetOutput(level));
         shrinker->SetInput(smoother->GetOutput());
 
         typename ImageSource<TOutputImage>::Pointer last = shrinker;
@@ -228,7 +216,6 @@ private:
     ModifiedTimeType                            time;
     const void *                                buffer;
     typename Superclass::ScheduleType           schedule;
-    bool                                        shrinks;
     double                                      maximumError;
     std::vector<typename TOutputImage::Pointer> images;
   };
