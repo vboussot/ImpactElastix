@@ -14,6 +14,7 @@ set(ELX_COMMON_GTEST_SOURCES
   itkCorrespondingPointsEuclideanDistancePointMetricGTest.cxx
   itkFileMappedImageContainerGTest.cxx
   itkFrugalBSplineInterpolateImageFunctionGTest.cxx
+  itkFrugalDiscreteGaussianImageFilterGTest.cxx
   itkGridScheduleComputerGTest.cxx
   itkImageFileCastWriterGTest.cxx
   itkImageFullSamplerGTest.cxx

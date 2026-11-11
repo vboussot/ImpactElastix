@@ -19,7 +19,7 @@
 #define itkStreamedRecursivePyramidImageFilter_h
 
 #include "itkCastImageFilter.h"
-#include "itkDiscreteGaussianImageFilter.h"
+#include "itkFrugalDiscreteGaussianImageFilter.h"
 #include "itkIdentityTransform.h"
 #include "itkLinearInterpolateImageFunction.h"
 #include "itkRecursiveMultiResolutionPyramidImageFilter.h"
@@ -172,8 +172,7 @@ protected:
       }
       else if (!allOnes)
       {
-        const auto smoother = DiscreteGaussianImageFilter<TOutputImage, TOutputImage>::New();
-        smoother->SetUseImageSpacing(false);
+        const auto smoother = FrugalDiscreteGaussianImageFilter<TOutputImage>::New();
         smoother->SetMaximumError(this->GetMaximumError());
         smoother->SetVariance(variance);
         smoother->SetInput(source);
