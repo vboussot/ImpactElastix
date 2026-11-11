@@ -20,6 +20,7 @@
 
 #include "itkGaussianOperator.h"
 #include "itkImageToImageFilter.h"
+#include "itkIndexRange.h"
 #include "itkNumericTraits.h"
 
 #include <algorithm>
@@ -205,8 +206,10 @@ private:
 
     std::vector<AccumulateType> sums(length);
     std::vector<RealType>       line(axis == 0 ? length + 2 * radius : 0);
-    IndexType                   index = written.GetIndex();
-    while (true)
+    // The lines of the region: its indices where the first axis starts.
+    RegionType lines = written;
+    lines.SetSize(0, 1);
+    for (const IndexType index : ImageRegionIndexRange<ImageDimension>(lines))
     {
       std::fill(sums.begin(), sums.end(), AccumulateType{});
       if (axis == 0)
@@ -246,19 +249,6 @@ private:
       for (SizeValueType x = 0; x < length; ++x)
       {
         pixels[x] = static_cast<PixelType>(static_cast<KernelValueType>(sums[x]));
-      }
-
-      // The next line of the region.
-      unsigned int n = 1;
-      while (n < ImageDimension &&
-             ++index[n] == written.GetIndex(n) + static_cast<IndexValueType>(written.GetSize(n)))
-      {
-        index[n] = written.GetIndex(n);
-        ++n;
-      }
-      if (n >= ImageDimension)
-      {
-        break;
       }
     }
   }
