@@ -18,7 +18,6 @@
 #ifndef itkStreamedRecursivePyramidImageFilter_h
 #define itkStreamedRecursivePyramidImageFilter_h
 
-#include "itkCastImageFilter.h"
 #include "itkFrugalDiscreteGaussianImageFilter.h"
 #include "itkIdentityTransform.h"
 #include "itkLinearInterpolateImageFunction.h"
@@ -140,19 +139,8 @@ protected:
                      std::vector<typename TOutputImage::Pointer>(numberOfLevels) };
 
     // The image a level comes from: the input, then the level before.
-    typename TOutputImage::Pointer source;
-    if constexpr (std::is_same_v<TInputImage, TOutputImage>)
-    {
-      source = const_cast<TInputImage *>(this->GetInput());
-    }
-    else
-    {
-      const auto caster = CastImageFilter<TInputImage, TOutputImage>::New();
-      caster->SetInput(this->GetInput());
-      caster->Update();
-      source = caster->GetOutput();
-      source->DisconnectPipeline();
-    }
+    static_assert(std::is_same_v<TInputImage, TOutputImage>, "A level may be the input.");
+    typename TOutputImage::Pointer source = const_cast<TInputImage *>(input);
 
     for (int level = numberOfLevels - 1; level >= 0; --level)
     {
