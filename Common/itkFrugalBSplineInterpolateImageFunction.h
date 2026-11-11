@@ -85,7 +85,8 @@ public:
       return;
     }
     else if (pixels != m_DecomposedPixels || pixels->GetMTime() != m_DecomposedTime ||
-             this->GetSplineOrder() != m_DecomposedOrder)
+             this->GetSplineOrder() != m_DecomposedOrder ||
+             (inputData == this->GetInputImage() && inputData->GetMTime() != m_InputTime))
     {
       this->Decompose(*inputData);
       m_DecomposedPixels = pixels;
@@ -97,6 +98,7 @@ public:
     {
       m_DecomposedPixels = nullptr;
     }
+    m_InputTime = inputData->GetMTime();
     this->m_DataLength = inputData->GetBufferedRegion().GetSize();
     Superclass::Superclass::SetInputImage(inputData);
   }
@@ -492,6 +494,9 @@ private:
   const Object *   m_DecomposedPixels{};
   ModifiedTimeType m_DecomposedTime{};
   int              m_DecomposedOrder{};
+
+  /** The modification time of the image set: the same image, modified since, has other pixels. */
+  ModifiedTimeType m_InputTime{};
 };
 
 } // end namespace itk

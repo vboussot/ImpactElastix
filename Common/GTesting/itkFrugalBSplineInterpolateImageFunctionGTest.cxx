@@ -124,6 +124,14 @@ GTEST_TEST(FrugalBSplineInterpolateImageFunction, KeepsTheCoefficientsOfTheSameP
   expected->SetInputImage(other);
   actual->SetInputImage(level);
   EXPECT_EQ(actual->EvaluateAtContinuousIndex(index), expected->EvaluateAtContinuousIndex(index));
+
+  // The pixels change again, and the image set says so.
+  const auto last = RandomImage(3);
+  std::copy_n(last->GetBufferPointer(), 40 * 12 * 20, level->GetBufferPointer());
+  level->Modified();
+  expected->SetInputImage(last);
+  actual->SetInputImage(level);
+  EXPECT_EQ(actual->EvaluateAtContinuousIndex(index), expected->EvaluateAtContinuousIndex(index));
 }
 
 
