@@ -75,8 +75,13 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
 
   /** Variables for nonzerojacobian indices and the Jacobian. */
   const NumberOfParametersType sizejacind = m_Transform->GetNumberOfNonZeroJacobianIndices();
-  JacobianType                 jacj(outdim, sizejacind, 0.0);
   NonZeroJacobianIndicesType   jacind(sizejacind);
+
+  /** A transform may leave the Jacobian of a sample as it is, off the grid of a B-spline: the Jacobian
+   * of that sample is then the one of the sample before it. Each loop over the samples starts with
+   * the Jacobian the loop before it leaves, and walks the samples in their order.
+   */
+  JacobianType prevjacj(outdim, sizejacind, 0.0);
   assert((sizejacind > 0) && (jacind.front() == 0));
 
   using FreqPairType = std::pair<unsigned int, unsigned int>;
@@ -114,7 +119,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
 
       /** Read fixed coordinates and get Jacobian J_j. */
       const FixedImagePointType & point = samples[samplenr].m_ImageCoordinates;
-      m_Transform->GetJacobian(point, jacj, jacind);
+      m_Transform->GetJacobian(point, prevjacj, jacind);
 
       /** Skip invalid Jacobians in the beginning, if any. */
       if (sizejacind > 1 && jacind[0] == jacind[1])
@@ -173,6 +178,9 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
   vnl_sparse_matrix<CovarianceValueType> cov(numberOfParameters, numberOfParameters);
   DiagCovarianceMatrixType               diagcov(numberOfParameters, 0.0);
 
+  /** The Jacobian the samples of term 1 leave. */
+  JacobianType prevjacjOfMaxima;
+
   {
     /** Initialize band matrix. */
     CovarianceMatrixType bandcov(numberOfParameters, bandcovsize, 0.0);
@@ -194,7 +202,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
       0,
       numberOfOwners,
       [&](const SizeValueType owner) {
-        JacobianType               jacj(outdim, sizejacind, 0.0);
+        JacobianType               jacj(prevjacj);
         NonZeroJacobianIndicesType jacind(sizejacind);
         /** The indices of no sample: the first sample starts a sum. */
         NonZeroJacobianIndicesType prevjacind(sizejacind, numberOfParameters);
@@ -284,6 +292,11 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
         /** Update covariance matrix once again to include last jactjac updates. */
         updateCovariance();
 
+        if (owner == 0)
+        {
+          prevjacjOfMaxima = jacj;
+        }
+
         /** Copy the bandmatrix into the sparse matrix.
          * \todo: perhaps work further with this bandmatrix instead.
          */
@@ -354,8 +367,9 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
    */
   const double sqrt2 = std::sqrt(2.0);
 
-  /** The terms of a sample depend on no other sample, and a maximum does not depend on the order
-   * it is taken in: the samples are shared out between the threads, each with its own workspace.
+  /** A maximum does not depend on the order it is taken in: the samples are shared out between the
+   * threads, each with its own workspace. A thread walks the samples before its own for the
+   * Jacobian they leave.
    */
   const auto                threader = MultiThreaderBase::New();
   const SizeValueType       numberOfChunks = std::min<SizeValueType>(nrofsamples, threader->GetNumberOfWorkUnits());
@@ -365,7 +379,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
     0,
     numberOfChunks,
     [&](const SizeValueType chunk) {
-      JacobianType               jacj(outdim, sizejacind, 0.0);
+      JacobianType               jacj(prevjacjOfMaxima);
       NonZeroJacobianIndicesType jacind(sizejacind);
       JacobianType               jacjjacj(outdim, outdim);
       JacobianType               jacjcov(outdim, sizejacind);
@@ -378,8 +392,9 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
       double                     maxJJ = 0.0;
       double                     maxJCJ = 0.0;
 
+      const SizeValueType begin = chunk * nrofsamples / numberOfChunks;
       const SizeValueType end = (chunk + 1) * nrofsamples / numberOfChunks;
-      for (SizeValueType s = chunk * nrofsamples / numberOfChunks; s < end; ++s)
+      for (SizeValueType s = 0; s < end; ++s)
       {
         /** Read fixed coordinates and get Jacobian. */
         const FixedImagePointType & point = samples[s].m_ImageCoordinates;
@@ -393,6 +408,10 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
             const unsigned int p = jacind[pi];
             jacj.scale_column(pi, 1.0 / m_Scales[p]);
           }
+        }
+        if (s < begin)
+        {
+          continue;
         }
 
         /** Compute 1st part of JJ: ||J_j||_F^2. */
