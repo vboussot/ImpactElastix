@@ -372,7 +372,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
    * Jacobian they leave.
    */
   const auto                threader = MultiThreaderBase::New();
-  const SizeValueType       numberOfChunks = std::min<SizeValueType>(nrofsamples, threader->GetNumberOfWorkUnits());
+  const SizeValueType       numberOfChunks = threader->GetNumberOfWorkUnits();
   std::vector<double>       maxJJOfChunk(numberOfChunks, 0.0);
   std::vector<double>       maxJCJOfChunk(numberOfChunks, 0.0);
   threader->ParallelizeArray(
@@ -498,8 +498,8 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
       maxJCJOfChunk[chunk] = maxJCJ;
     },
     nullptr);
-  const double maxJJ = nrofsamples == 0 ? 0.0 : *std::max_element(maxJJOfChunk.begin(), maxJJOfChunk.end());
-  const double maxJCJ = nrofsamples == 0 ? 0.0 : *std::max_element(maxJCJOfChunk.begin(), maxJCJOfChunk.end());
+  const double maxJJ = *std::max_element(maxJJOfChunk.begin(), maxJJOfChunk.end());
+  const double maxJCJ = *std::max_element(maxJCJOfChunk.begin(), maxJCJOfChunk.end());
 
   /** Finalize progress information. */
   // progressObserver->PrintProgress( 1.0 );
