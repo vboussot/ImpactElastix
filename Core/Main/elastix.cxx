@@ -71,7 +71,7 @@ constexpr const char * elastixHelpText =
   "  -priority set the process priority to high, abovenormal, normal (default),\n"
   "            belownormal, or idle (Windows only option)\n"
   "  -threads  set the maximum number of threads of elastix\n"
-  "  -outofcore  keep the images of the registration (with their pyramids and interpolation\n"
+  "  -out-of-core keep the images of the registration (with their pyramids and interpolation\n"
   "            coefficients) in files of the output directory, paged in by the system: for\n"
   "            images larger than the memory. Takes no value.\n\n"
 
@@ -100,9 +100,9 @@ main(int argc, char ** argv)
     SetConsoleOutputCP(CP_UTF8);
 #endif
 
-    /** -outofcore takes no value: it leaves the key-value pairs the arguments are read as. */
+    /** -out-of-core takes no value: it leaves the key-value pairs the arguments are read as. */
     char ** const argumentsEnd = std::remove_if(
-      argv + 1, argv + argc, [](const char * argument) { return std::string(argument) == "-outofcore"; });
+      argv + 1, argv + argc, [](const char * argument) { return std::string(argument) == "-out-of-core"; });
     const bool outOfCore = argumentsEnd != argv + argc;
     argc = static_cast<int>(argumentsEnd - argv);
     argv[argc] = nullptr;
@@ -258,11 +258,11 @@ main(int argc, char ** argv)
       return returndummy;
     }
 
-    /** With -outofcore, the images allocated from here on keep their buffers in files of the output directory. */
+    /** With -out-of-core, the images allocated from here on keep their buffers in files of the output directory. */
     if (outOfCore)
     {
       itk::FileMappedImageContainerFactory::MapImagesFrom(outFolder);
-      elx::log::info("-outofcore: the images are kept in files of the output directory, paged in by the system.");
+      elx::log::info("-out-of-core: the images are kept in files of the output directory, paged in by the system.");
     }
 
     /** The images of a run are those of its files, and each parameter file computes the same pyramids of them:
