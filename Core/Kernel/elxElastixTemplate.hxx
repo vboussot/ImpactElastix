@@ -21,19 +21,19 @@
 #  include "elxElastixTemplate.h"
 #  include <itkDeref.h>
 
-#  define elxCheckAndSetComponentMacro(_name)                                                                         \
-    _name##BaseType * base = this->GetElx##_name##Base(i);                                                            \
-    if (base != nullptr)                                                                                              \
-    {                                                                                                                 \
-      base->SetComponentLabel(#_name, i);                                                                             \
-      base->SetElastix(This);                                                                                         \
-    }                                                                                                                 \
-    else                                                                                                              \
-    {                                                                                                                 \
-      std::string par = "";                                                                                           \
-      itk::Deref(ElastixBase::GetConfiguration()).ReadParameter(par, #_name, i, false);                               \
-      itkExceptionMacro("ERROR: entry " << i << " of " << #_name << " reads \"" << par << "\", which is not of type " \
-                                        << #_name << "BaseType.");                                                    \
+#  define elxCheckAndSetComponentMacro(_name)                                                                  \
+    _name##BaseType * base = this->GetElx##_name##Base(i);                                                     \
+    if (base != nullptr)                                                                                       \
+    {                                                                                                          \
+      base->SetComponentLabel(#_name, i);                                                                      \
+      base->SetElastix(This);                                                                                  \
+    }                                                                                                          \
+    else                                                                                                       \
+    {                                                                                                          \
+      std::string par = "";                                                                                    \
+      itk::Deref(ElastixBase::GetConfiguration()).ReadParameter(par, #_name, i, false);                        \
+      itkExceptionMacro("entry " << i << " of " << #_name << " reads \"" << par << "\", which is not of type " \
+                                 << #_name << "BaseType.");                                                    \
     }
 // end elxCheckAndSetComponentMacro
 
@@ -589,6 +589,9 @@ ElastixTemplate<TFixedImage, TMovingImage>::AfterEachResolution()
   log::info(std::ostringstream{} << std::setprecision(3) << "Time spent in resolution " << (level)
                                  << " (ITK initialization and iterating): "
                                  << ElastixBase::m_ResolutionTimer.GetMean());
+
+  // The images are read in order again until the next iterations: for the next resolution, the next pyramids.
+  itk::FileMappedScratch::ReadInOrder(true);
 
   /** Call all the AfterEachResolution() functions. */
   this->AfterEachResolutionBase();

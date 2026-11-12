@@ -23,6 +23,7 @@
 #include "itkImageSamplerBase.h"
 #include "itkGradientImageFilter.h"
 #include "itkBSplineInterpolateImageFunction.h"
+#include "itkFrugalBSplineInterpolateImageFunction.h"
 #include "itkReducedDimensionBSplineInterpolateImageFunction.h"
 #include "itkAdvancedLinearInterpolateImageFunction.h"
 #include "itkLimiterFunctionBase.h"
@@ -525,6 +526,20 @@ protected:
     return EvaluateMovingImageValueAndDerivativeWithOptionalThreadId(mappedPoint, movingImageValue, gradient);
   }
 
+  /** Asks for the moving image around a mapped point ahead of its evaluation, when the interpolator can:
+   * a hint for a metric that knows the points it evaluates next, which changes no value.
+   */
+  void
+  PrefetchMovingImage(const MovingImagePointType & mappedPoint) const
+  {
+    if (m_FrugalBSplineInterpolator != nullptr)
+    {
+      MovingImageContinuousIndexType cindex;
+      Superclass::m_Interpolator->ConvertPointToContinuousIndex(mappedPoint, cindex);
+      m_FrugalBSplineInterpolator->Prefetch(cindex);
+    }
+  }
+
   /* A faster version of `EvaluateMovingImageValueAndDerivative`: Non-virtual, using multithreading, and doing less
    * dynamic memory allocation/decallocation operations, internally. */
   bool
@@ -640,11 +655,13 @@ private:
                                                             const TOptionalThreadId... optionalThreadId) const;
 
   /** Private member variables for limiters and for image derivative computation. */
-  FixedImageLimiterPointer          m_FixedImageLimiter{ nullptr };
-  MovingImageLimiterPointer         m_MovingImageLimiter{ nullptr };
-  LinearInterpolatorPointer         m_LinearInterpolator{ nullptr };
-  BSplineInterpolatorPointer        m_BSplineInterpolator{ nullptr };
-  BSplineInterpolatorFloatPointer   m_BSplineInterpolatorFloat{ nullptr };
+  FixedImageLimiterPointer        m_FixedImageLimiter{ nullptr };
+  MovingImageLimiterPointer       m_MovingImageLimiter{ nullptr };
+  LinearInterpolatorPointer       m_LinearInterpolator{ nullptr };
+  BSplineInterpolatorPointer      m_BSplineInterpolator{ nullptr };
+  BSplineInterpolatorFloatPointer m_BSplineInterpolatorFloat{ nullptr };
+  const FrugalBSplineInterpolateImageFunction<MovingImageType, CoordinateRepresentationType, double> *
+                                    m_FrugalBSplineInterpolator{ nullptr };
   ReducedBSplineInterpolatorPointer m_ReducedBSplineInterpolator{ nullptr };
 
   /** Other private member variables. */

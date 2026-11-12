@@ -23,7 +23,6 @@ jobs:
             flavor: cu128
             torch: '2.11'
             cuda_toolkit_version: '12.8.0'
-            itk-git-tag: $DEFAULT_ITK_GIT_TAG
             c-compiler: "gcc"
             cxx-compiler: "g++"
             cmake-build-type: "Release"
@@ -33,7 +32,6 @@ jobs:
             flavor: cu130
             torch: '2.12'
             cuda_toolkit_version: '13.0.2'
-            itk-git-tag: $DEFAULT_ITK_GIT_TAG
             c-compiler: "gcc"
             cxx-compiler: "g++"
             cmake-build-type: "Release"
@@ -43,7 +41,6 @@ jobs:
             flavor: cu128
             torch: '2.11'
             cuda_toolkit_version: '12.8.0'
-            itk-git-tag: $DEFAULT_ITK_GIT_TAG
             c-compiler: "cl.exe"
             cxx-compiler: "cl.exe"
             cmake-build-type: "Release"
@@ -54,19 +51,17 @@ jobs:
             flavor: cu130
             torch: '2.12'
             cuda_toolkit_version: '13.0.2'
-            itk-git-tag: $DEFAULT_ITK_GIT_TAG
             c-compiler: "cl.exe"
             cxx-compiler: "cl.exe"
             cmake-build-type: "Release"
             libs:
               - elastix-build/bin/elx-ANNlib.dll
             vcvars64: "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
-          - os: macos-14
+          - os: macos-15
             flavor: cpu
             torch: '2.11'
             c-compiler: "clang"
             cxx-compiler: "clang++"
-            itk-git-tag: $DEFAULT_ITK_GIT_TAG
             cmake-build-type: "Release"
             libs:
               - elastix-build/bin/libelx-ANNlib.dylib
@@ -102,7 +97,7 @@ jobs:
       - name: Clone and build ITK
         uses: ./.github/actions/build_itk
         with:
-          itk-git-tag: ${{ matrix.itk-git-tag }}
+          itk-git-tag: ${{ env.DEFAULT_ITK_GIT_TAG }}
           c-compiler: ${{ matrix.c-compiler }}
           cxx-compiler: ${{ matrix.cxx-compiler }}
           cmake-build-type: ${{ matrix.cmake-build-type }}
@@ -117,7 +112,7 @@ jobs:
         run: |
           git init "${{ github.workspace }}/ITKIMPACT"
           cd "${{ github.workspace }}/ITKIMPACT"
-          git fetch --depth 1 https://github.com/InsightSoftwareConsortium/ITKIMPACT.git "${{ inputs.itkimpact_ref || 'main' }}"
+          git fetch --depth 1 https://github.com/InsightSoftwareConsortium/ITKIMPACT.git "${{ inputs.itkimpact_ref || 'v0.1.6' }}"
           git checkout FETCH_HEAD
         shell: bash
 
@@ -178,7 +173,7 @@ jobs:
         # Reinstall torch as the flavour's CUDA build over the same site-packages path (Torch_DIR is
         # unchanged); the ImpactMetric target is then rebuilt against CUDA below. Both flavours
         # support Blackwell (RTX PRO 6000 / RTX 50xx / B200).
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         shell: bash
         run: |
           python -m pip install "torch==${{ matrix.torch }}.*" --index-url https://download.pytorch.org/whl/${{ matrix.flavor }}

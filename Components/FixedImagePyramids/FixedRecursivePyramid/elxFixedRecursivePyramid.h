@@ -19,7 +19,7 @@
 #define elxFixedRecursivePyramid_h
 
 #include "elxIncludes.h" // include first to avoid MSVS warning
-#include "itkRecursiveMultiResolutionPyramidImageFilter.h"
+#include "itkStreamedRecursivePyramidImageFilter.h"
 
 namespace elastix
 {
@@ -37,8 +37,8 @@ namespace elastix
 
 template <typename TElastix>
 class ITK_TEMPLATE_EXPORT FixedRecursivePyramid
-  : public itk::RecursiveMultiResolutionPyramidImageFilter<typename FixedImagePyramidBase<TElastix>::InputImageType,
-                                                           typename FixedImagePyramidBase<TElastix>::OutputImageType>
+  : public itk::StreamedRecursivePyramidImageFilter<typename FixedImagePyramidBase<TElastix>::InputImageType,
+                                                    typename FixedImagePyramidBase<TElastix>::OutputImageType>
   , public FixedImagePyramidBase<TElastix>
 {
 public:
@@ -47,8 +47,8 @@ public:
   /** Standard ITK-stuff. */
   using Self = FixedRecursivePyramid;
   using Superclass1 =
-    itk::RecursiveMultiResolutionPyramidImageFilter<typename FixedImagePyramidBase<TElastix>::InputImageType,
-                                                    typename FixedImagePyramidBase<TElastix>::OutputImageType>;
+    itk::StreamedRecursivePyramidImageFilter<typename FixedImagePyramidBase<TElastix>::InputImageType,
+                                             typename FixedImagePyramidBase<TElastix>::OutputImageType>;
   using Superclass2 = FixedImagePyramidBase<TElastix>;
   using Pointer = itk::SmartPointer<Self>;
   using ConstPointer = itk::SmartPointer<const Self>;

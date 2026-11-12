@@ -25,7 +25,11 @@
 #include <vnl/vnl_diag_matrix.h>
 #include <vnl/vnl_sparse_matrix.h>
 
+#include <itkMultiThreaderBase.h>
+
+#include <algorithm>
 #include <cassert>
+#include <vector>
 
 namespace itk
 {
@@ -71,10 +75,14 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
 
   /** Variables for nonzerojacobian indices and the Jacobian. */
   const NumberOfParametersType sizejacind = m_Transform->GetNumberOfNonZeroJacobianIndices();
-  JacobianType                 jacj(outdim, sizejacind, 0.0);
   NonZeroJacobianIndicesType   jacind(sizejacind);
-  NonZeroJacobianIndicesType   prevjacind(sizejacind);
-  assert((sizejacind > 0) && (jacind.front() == 0) && (prevjacind.front() == 0));
+
+  /** A transform may leave the Jacobian of a sample as it is, off the grid of a B-spline: the Jacobian
+   * of that sample is then the one of the sample before it. Each loop over the samples starts with
+   * the Jacobian the loop before it leaves, and walks the samples in their order.
+   */
+  JacobianType prevjacj(outdim, sizejacind, 0.0);
+  assert((sizejacind > 0) && (jacind.front() == 0));
 
   using FreqPairType = std::pair<unsigned int, unsigned int>;
   std::vector<FreqPairType> difHist2;
@@ -111,7 +119,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
 
       /** Read fixed coordinates and get Jacobian J_j. */
       const FixedImagePointType & point = samples[samplenr].m_ImageCoordinates;
-      m_Transform->GetJacobian(point, jacj, jacind);
+      m_Transform->GetJacobian(point, prevjacj, jacind);
 
       /** Skip invalid Jacobians in the beginning, if any. */
       if (sizejacind > 1 && jacind[0] == jacind[1])
@@ -170,10 +178,10 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
   vnl_sparse_matrix<CovarianceValueType> cov(numberOfParameters, numberOfParameters);
   DiagCovarianceMatrixType               diagcov(numberOfParameters, 0.0);
 
-  {
-    /** For temporary storage of J'J. */
-    CovarianceMatrixType jactjac(sizejacind, sizejacind, 0.0);
+  /** The Jacobian the samples of term 1 leave. */
+  JacobianType prevjacjOfMaxima;
 
+  {
     /** Initialize band matrix. */
     CovarianceMatrixType bandcov(numberOfParameters, bandcovsize, 0.0);
 
@@ -183,36 +191,31 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
      * Loop over image and compute Jacobian.
      * Compute C = 1/n \sum_i J_i^T J_i
      * Possibly apply scaling afterwards.
+     *
+     * An element of C is the sum of what the samples give it, taken in their order. The rows of C
+     * are shared out between the threads: each one walks all the samples, in order, and sums the
+     * rows that are its own, so that an element is summed as it is on one thread.
      */
-    jacind[0] = 0;
-    if (sizejacind > 1)
-    {
-      jacind[1] = 0;
-    }
-    for (const auto & sample : samples)
-    {
-      /** Read fixed coordinates and get Jacobian J_j. */
-      const FixedImagePointType & point = sample.m_ImageCoordinates;
-      m_Transform->GetJacobian(point, jacj, jacind);
+    const auto          threader = MultiThreaderBase::New();
+    const SizeValueType numberOfOwners = threader->GetNumberOfWorkUnits();
+    threader->ParallelizeArray(
+      0,
+      numberOfOwners,
+      [&](const SizeValueType owner) {
+        JacobianType               jacj(prevjacj);
+        NonZeroJacobianIndicesType nzji(sizejacind);
+        /** The indices of no sample: the first sample starts a sum. */
+        NonZeroJacobianIndicesType prevjacind(sizejacind, numberOfParameters);
 
-      /** Skip invalid Jacobians in the beginning, if any. */
-      if (sizejacind > 1 && jacind[0] == jacind[1])
-      {
-        continue;
-      }
+        /** J'J of the samples in a row that have the same nonzero Jacobian indices: the rows of this thread. */
+        CovarianceMatrixType jactjac(sizejacind, sizejacind, 0.0);
 
-      if (jacind == prevjacind)
-      {
-        /** Update sum of J_j^T J_j. */
-        vnl_fastops::inc_X_by_AtA(jactjac, jacj);
-      }
-      else
-      {
-        /** The following should only be done after the first sample. */
-        if (&sample != &(samples.front()))
-        {
-          /** Update covariance matrix. */
-          for (unsigned int pi = 0; pi < sizejacind; ++pi)
+        /** Where the parameters of this thread are among the nonzero Jacobian indices. */
+        std::vector<unsigned int> own;
+
+        /** Update covariance matrix. */
+        const auto updateCovariance = [&] {
+          for (const unsigned int pi : own)
           {
             const unsigned int p = prevjacind[pi];
             for (unsigned int qi = 0; qi < sizejacind; ++qi)
@@ -220,13 +223,13 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
               const unsigned int q = prevjacind[qi];
               if (q >= p)
               {
-                const double tempval = jactjac(pi, qi) / n;
+                const double tempval = jactjac[pi][qi] / n;
                 if (std::abs(tempval) > 1e-14)
                 {
                   const unsigned int bandindex = bandcovMap[q - p];
                   if (bandindex < bandcovsize)
                   {
-                    bandcov(p, bandindex) += tempval;
+                    bandcov[p][bandindex] += tempval;
                   }
                   else
                   {
@@ -236,61 +239,82 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
               }
             } // qi
           } // pi
-        } // end if
+        };
 
-        /** Initialize jactjac by J_j^T J_j. */
-        vnl_fastops::AtA(jactjac, jacj);
-
-        /** Remember nonzerojacobian indices. */
-        prevjacind = jacind;
-      } // end else
-
-    } // end iter loop: end computation of covariance matrix
-
-    /** Update covariance matrix once again to include last jactjac updates
-     * \todo: a bit ugly that this loop is copied from above.
-     */
-    for (unsigned int pi = 0; pi < sizejacind; ++pi)
-    {
-      const unsigned int p = prevjacind[pi];
-      for (unsigned int qi = 0; qi < sizejacind; ++qi)
-      {
-        const unsigned int q = prevjacind[qi];
-        if (q >= p)
+        for (const auto & sample : samples)
         {
-          const double tempval = jactjac(pi, qi) / n;
-          if (std::abs(tempval) > 1e-14)
+          /** Read fixed coordinates and get Jacobian J_j. */
+          const FixedImagePointType & point = sample.m_ImageCoordinates;
+          m_Transform->GetJacobian(point, jacj, nzji);
+
+          /** Skip invalid Jacobians in the beginning, if any. */
+          if (sizejacind > 1 && nzji[0] == nzji[1])
           {
-            const unsigned int bandindex = bandcovMap[q - p];
-            if (bandindex < bandcovsize)
+            continue;
+          }
+
+          /** With the indices of the sample before, J_j^T J_j adds to the sum; with others, the sum goes
+           * to the covariance matrix and starts again.
+           */
+          const bool sameIndices = nzji == prevjacind;
+          if (!sameIndices)
+          {
+            updateCovariance();
+            prevjacind = nzji;
+            own.clear();
+            for (unsigned int pi = 0; pi < sizejacind; ++pi)
             {
-              bandcov(p, bandindex) += tempval;
+              if (static_cast<unsigned int>(nzji[pi]) % static_cast<unsigned int>(numberOfOwners) == owner)
+              {
+                own.push_back(pi);
+              }
             }
-            else
+          }
+          for (const unsigned int pi : own)
+          {
+            double * const row = jactjac[pi];
+            for (unsigned int qi = 0; qi < sizejacind; ++qi)
             {
-              cov(p, q) += tempval;
+              if (nzji[qi] >= nzji[pi])
+              {
+                /** An element of J_j^T J_j, summed over the rows of J_j as vnl_fastops sums it. */
+                double accum = 0;
+                for (unsigned int k = 0; k < outdim; ++k)
+                {
+                  accum += jacj[k][pi] * jacj[k][qi];
+                }
+                row[qi] = sameIndices ? row[qi] + accum : accum;
+              }
+            }
+          }
+        } // end iter loop: end computation of covariance matrix
+
+        /** Update covariance matrix once again to include last jactjac updates. */
+        updateCovariance();
+
+        if (owner == 0)
+        {
+          prevjacjOfMaxima = jacj;
+        }
+
+        /** Copy the bandmatrix into the sparse matrix.
+         * \todo: perhaps work further with this bandmatrix instead.
+         */
+        for (unsigned int p = owner; p < numberOfParameters; p += numberOfOwners)
+        {
+          for (unsigned int b = 0; b < bandcovsize; ++b)
+          {
+            const double tempval = bandcov[p][b];
+            if (std::abs(tempval) > 1e-14)
+            {
+              const unsigned int q = p + bandcovMap2[b];
+              cov(p, q) = tempval;
             }
           }
         }
-      } // qi
-    } // pi
-
-    /** Copy the bandmatrix into the sparse matrix and empty the bandcov matrix.
-     * \todo: perhaps work further with this bandmatrix instead.
-     */
-    for (unsigned int p = 0; p < numberOfParameters; ++p)
-    {
-      for (unsigned int b = 0; b < bandcovsize; ++b)
-      {
-        const double tempval = bandcov(p, b);
-        if (std::abs(tempval) > 1e-14)
-        {
-          const unsigned int q = p + bandcovMap2[b];
-          cov(p, q) = tempval;
-        }
-      }
-    }
-  } // End of scope of `bandcov` and `jactjac`.
+      },
+      nullptr);
+  } // End of scope of `bandcov`.
 
   /** Apply scales. the use of m_Scales maybe something wrong. */
   if (m_UseScales)
@@ -341,110 +365,141 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
    * \li maxJJ = max_j [ ||J_j||_F^2 + 2\sqrt{2} || J_j J_j^T ||_F ]
    * \li maxJCJ = max_j [ Tr( J_j C J_j^T ) + 2\sqrt{2} || J_j C J_j^T ||_F ]
    */
-  double       maxJJ = 0.0;
-  double       maxJCJ = 0.0;
   const double sqrt2 = std::sqrt(2.0);
 
-  JacobianType              jacjjacj(outdim, outdim);
-  JacobianType              jacjcov(outdim, sizejacind);
-  DiagCovarianceMatrixType  diagcovsparse(sizejacind);
-  JacobianType              jacjdiagcov(outdim, sizejacind);
-  JacobianType              jacjdiagcovjacj(outdim, outdim);
-  JacobianType              jacjcovjacj(outdim, outdim);
-  itk::Array<SizeValueType> jacindExpanded(numberOfParameters);
+  /** A maximum does not depend on the order it is taken in: the samples are shared out between the
+   * threads, each with its own workspace. A thread walks the samples before its own for the
+   * Jacobian they leave.
+   */
+  const auto          threader = MultiThreaderBase::New();
+  const SizeValueType numberOfChunks = threader->GetNumberOfWorkUnits();
+  std::vector<double> maxJJOfChunk(numberOfChunks, 0.0);
+  std::vector<double> maxJCJOfChunk(numberOfChunks, 0.0);
+  threader->ParallelizeArray(
+    0,
+    numberOfChunks,
+    [&](const SizeValueType chunk) {
+      JacobianType               jacj(prevjacjOfMaxima);
+      NonZeroJacobianIndicesType nzji(sizejacind);
+      JacobianType               jacjjacj(outdim, outdim);
+      JacobianType               jacjcov(outdim, sizejacind);
+      DiagCovarianceMatrixType   diagcovsparse(sizejacind);
+      JacobianType               jacjdiagcov(outdim, sizejacind);
+      JacobianType               jacjdiagcovjacj(outdim, outdim);
+      JacobianType               jacjcovjacj(outdim, outdim);
+      /** Where each parameter is among the nonzero Jacobian indices of the sample; sizejacind elsewhere. */
+      std::vector<SizeValueType> jacindExpanded(numberOfParameters, sizejacind);
+      double                     maxJJ = 0.0;
+      double                     maxJCJ = 0.0;
 
-  for (const auto & sample : samples)
-  {
-    /** Read fixed coordinates and get Jacobian. */
-    const FixedImagePointType & point = sample.m_ImageCoordinates;
-    m_Transform->GetJacobian(point, jacj, jacind);
-
-    /** Apply scales, if necessary. */
-    if (m_UseScales)
-    {
-      for (unsigned int pi = 0; pi < sizejacind; ++pi)
+      const SizeValueType begin = chunk * nrofsamples / numberOfChunks;
+      const SizeValueType end = (chunk + 1) * nrofsamples / numberOfChunks;
+      for (SizeValueType s = 0; s < end; ++s)
       {
-        const unsigned int p = jacind[pi];
-        jacj.scale_column(pi, 1.0 / m_Scales[p]);
-      }
-    }
+        /** Read fixed coordinates and get Jacobian. */
+        const FixedImagePointType & point = samples[s].m_ImageCoordinates;
+        m_Transform->GetJacobian(point, jacj, nzji);
 
-    /** Compute 1st part of JJ: ||J_j||_F^2. */
-    double JJ_j = vnl_math::sqr(jacj.frobenius_norm());
-
-    /** Compute 2nd part of JJ: 2\sqrt{2} || J_j J_j^T ||_F. */
-    vnl_fastops::ABt(jacjjacj, jacj, jacj);
-    JJ_j += 2.0 * sqrt2 * jacjjacj.frobenius_norm();
-
-    /** Max_j [JJ_j]. */
-    maxJJ = std::max(maxJJ, JJ_j);
-
-    /** Compute JCJ_j. */
-    double JCJ_j = 0.0;
-
-    /** J_j C = jacjC. */
-    jacjcov.Fill(0.0);
-
-    /** Store the nonzero Jacobian indices in a different format
-     * and create the sparse diagcov.
-     */
-    jacindExpanded.Fill(sizejacind);
-    for (unsigned int pi = 0; pi < sizejacind; ++pi)
-    {
-      const unsigned int p = jacind[pi];
-      jacindExpanded[p] = pi;
-      diagcovsparse[pi] = diagcov[p];
-    }
-
-    /** We below calculate jacjC = J_j cov^T, but later we will correct
-     * for this using:
-     * J C J' = J (cov + cov' - diag(cov')) J'.
-     * (NB: cov now still contains only the upper triangular part of C)
-     */
-    for (unsigned int pi = 0; pi < sizejacind; ++pi)
-    {
-      /** Loop over row of the sparse cov matrix. */
-      for (const auto & covRowEntry : cov.get_row(jacind[pi]))
-      {
-        const unsigned int q = covRowEntry.first;
-        const unsigned int qi = jacindExpanded[q];
-
-        if (qi < sizejacind)
+        /** Apply scales, if necessary. */
+        if (m_UseScales)
         {
-          /** If found, update the jacjC matrix. */
-          const CovarianceValueType covElement = covRowEntry.second;
-          for (unsigned int dx = 0; dx < outdim; ++dx)
+          for (unsigned int pi = 0; pi < sizejacind; ++pi)
           {
-            jacjcov[dx][pi] += jacj[dx][qi] * covElement;
-          } // dx
-        } // if qi < sizejacind
-      } // for covrow
-    } // pi
+            const unsigned int p = nzji[pi];
+            jacj.scale_column(pi, 1.0 / m_Scales[p]);
+          }
+        }
+        if (s < begin)
+        {
+          continue;
+        }
 
-    /** J_j C J_j^T  = jacjCjacj.
-     * But note that we actually compute J_j cov' J_j^T
-     */
-    vnl_fastops::ABt(jacjcovjacj, jacjcov, jacj);
+        /** Compute 1st part of JJ: ||J_j||_F^2. */
+        double JJ_j = vnl_math::sqr(jacj.frobenius_norm());
 
-    /** jacjCjacj = jacjCjacj+ jacjCjacj' - jacjdiagcovjacj */
-    jacjdiagcov = jacj * diagcovsparse;
-    vnl_fastops::ABt(jacjdiagcovjacj, jacjdiagcov, jacj);
-    jacjcovjacj += jacjcovjacj.transpose();
-    jacjcovjacj -= jacjdiagcovjacj;
+        /** Compute 2nd part of JJ: 2\sqrt{2} || J_j J_j^T ||_F. */
+        vnl_fastops::ABt(jacjjacj, jacj, jacj);
+        JJ_j += 2.0 * sqrt2 * jacjjacj.frobenius_norm();
 
-    /** Compute 1st part of JCJ: Tr( J_j C J_j^T ). */
-    for (unsigned int d = 0; d < outdim; ++d)
-    {
-      JCJ_j += jacjcovjacj[d][d];
-    }
+        /** Max_j [JJ_j]. */
+        maxJJ = std::max(maxJJ, JJ_j);
 
-    /** Compute 2nd part of JCJ_j: 2 \sqrt{2} || J_j C J_j^T ||_F. */
-    JCJ_j += 2.0 * sqrt2 * jacjcovjacj.frobenius_norm();
+        /** Compute JCJ_j. */
+        double JCJ_j = 0.0;
 
-    /** Max_j [JCJ_j]. */
-    maxJCJ = std::max(maxJCJ, JCJ_j);
+        /** J_j C = jacjC. */
+        jacjcov.Fill(0.0);
 
-  } // end loop over sample container
+        /** Store the nonzero Jacobian indices in a different format
+         * and create the sparse diagcov.
+         */
+        for (unsigned int pi = 0; pi < sizejacind; ++pi)
+        {
+          const unsigned int p = nzji[pi];
+          jacindExpanded[p] = pi;
+          diagcovsparse[pi] = diagcov[p];
+        }
+
+        /** We below calculate jacjC = J_j cov^T, but later we will correct
+         * for this using:
+         * J C J' = J (cov + cov' - diag(cov')) J'.
+         * (NB: cov now still contains only the upper triangular part of C)
+         */
+        for (unsigned int pi = 0; pi < sizejacind; ++pi)
+        {
+          /** Loop over row of the sparse cov matrix. */
+          for (const auto & covRowEntry : cov.get_row(nzji[pi]))
+          {
+            const unsigned int q = covRowEntry.first;
+            const unsigned int qi = jacindExpanded[q];
+
+            if (qi < sizejacind)
+            {
+              /** If found, update the jacjC matrix. */
+              const CovarianceValueType covElement = covRowEntry.second;
+              for (unsigned int dx = 0; dx < outdim; ++dx)
+              {
+                jacjcov[dx][pi] += jacj[dx][qi] * covElement;
+              } // dx
+            } // if qi < sizejacind
+          } // for covrow
+        } // pi
+
+        /** The indices of this sample leave the expanded format: only they were set. */
+        for (unsigned int pi = 0; pi < sizejacind; ++pi)
+        {
+          jacindExpanded[nzji[pi]] = sizejacind;
+        }
+
+        /** J_j C J_j^T  = jacjCjacj.
+         * But note that we actually compute J_j cov' J_j^T
+         */
+        vnl_fastops::ABt(jacjcovjacj, jacjcov, jacj);
+
+        /** jacjCjacj = jacjCjacj+ jacjCjacj' - jacjdiagcovjacj */
+        jacjdiagcov = jacj * diagcovsparse;
+        vnl_fastops::ABt(jacjdiagcovjacj, jacjdiagcov, jacj);
+        jacjcovjacj += jacjcovjacj.transpose();
+        jacjcovjacj -= jacjdiagcovjacj;
+
+        /** Compute 1st part of JCJ: Tr( J_j C J_j^T ). */
+        for (unsigned int d = 0; d < outdim; ++d)
+        {
+          JCJ_j += jacjcovjacj[d][d];
+        }
+
+        /** Compute 2nd part of JCJ_j: 2 \sqrt{2} || J_j C J_j^T ||_F. */
+        JCJ_j += 2.0 * sqrt2 * jacjcovjacj.frobenius_norm();
+
+        /** Max_j [JCJ_j]. */
+        maxJCJ = std::max(maxJCJ, JCJ_j);
+      } // end loop over the samples of the chunk
+      maxJJOfChunk[chunk] = maxJJ;
+      maxJCJOfChunk[chunk] = maxJCJ;
+    },
+    nullptr);
+  const double maxJJ = *std::max_element(maxJJOfChunk.begin(), maxJJOfChunk.end());
+  const double maxJCJ = *std::max_element(maxJCJOfChunk.begin(), maxJCJOfChunk.end());
 
   /** Finalize progress information. */
   // progressObserver->PrintProgress( 1.0 );

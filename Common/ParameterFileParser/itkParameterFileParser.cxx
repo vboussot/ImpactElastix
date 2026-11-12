@@ -27,6 +27,7 @@
 #include "tomlplusplus/toml.hpp"
 
 #include <fstream>
+#include <iterator> // For begin and end.
 
 namespace itk
 {
@@ -37,7 +38,7 @@ namespace
 void
 ThrowException(const std::string & line, const std::string & hint)
 {
-  itkGenericExceptionMacro("ERROR: the following line in your parameter file is invalid: \n\""
+  itkGenericExceptionMacro("the following line in your parameter file is invalid: \n\""
                            << line + "\"\n"
                            << hint << "\nPlease correct you parameter file!");
 
@@ -249,29 +250,28 @@ BasicFileChecking(const std::string & parameterFileName)
   /** Check if the file name is given. */
   if (parameterFileName.empty())
   {
-    itkGenericExceptionMacro("ERROR: FileName has not been set.");
+    itkGenericExceptionMacro("FileName has not been set.");
   }
 
   /** Basic error checking: existence. */
   const bool exists = itksys::SystemTools::FileExists(parameterFileName);
   if (!exists)
   {
-    itkGenericExceptionMacro("ERROR: the file " << parameterFileName << " does not exist.");
+    itkGenericExceptionMacro("the file " << parameterFileName << " does not exist.");
   }
 
   /** Basic error checking: file or directory. */
   const bool isDir = itksys::SystemTools::FileIsDirectory(parameterFileName);
   if (isDir)
   {
-    itkGenericExceptionMacro("ERROR: the file " << parameterFileName << " is a directory.");
+    itkGenericExceptionMacro("the file " << parameterFileName << " is a directory.");
   }
 
   /** Check the extension. */
-  const std::string ext = itksys::SystemTools::GetFilenameLastExtension(parameterFileName);
-  if (ext != ".txt" && ext != ".toml")
+  if (!ParameterFileParser::HasParameterFileNameExtension(parameterFileName))
   {
-    itkGenericExceptionMacro("ERROR: the file " << parameterFileName
-                                                << " should be a text file (*.txt) or a TOML file (*.toml).");
+    itkGenericExceptionMacro("the file " << parameterFileName
+                                         << " should be a text file (*.txt) or a TOML file (*.toml).");
   }
 
 } // end BasicFileChecking()
@@ -476,7 +476,7 @@ ParameterFileParser::ReadParameterFile()
     /** Check if it opened. */
     if (!parameterFile.is_open())
     {
-      itkExceptionMacro("ERROR: could not open " << m_ParameterFileName << " for reading.");
+      itkExceptionMacro("could not open " << m_ParameterFileName << " for reading.");
     }
 
     ReadParameterMapFromInputStream(m_ParameterMap, parameterFile);
@@ -501,7 +501,7 @@ ParameterFileParser::ReturnParameterFileAsString(const std::string & fileName)
   /** Check if it opened. */
   if (!parameterFile.is_open())
   {
-    itkGenericExceptionMacro("ERROR: could not open " << fileName << " for reading.");
+    itkGenericExceptionMacro("could not open " << fileName << " for reading.");
   }
 
   /** Loop over the parameter file, line by line. */
@@ -550,5 +550,15 @@ ParameterFileParser::ConvertToParameterMap(const std::string & text) -> Paramete
   return parameterMap;
 }
 
+
+bool
+ParameterFileParser::HasParameterFileNameExtension(const std::string & fileName)
+{
+  static constexpr std::string_view parameterFileNameExtensions[] = { ".txt", ".toml" };
+
+  return std::count(std::begin(parameterFileNameExtensions),
+                    std::end(parameterFileNameExtensions),
+                    itksys::SystemTools::GetFilenameLastExtension(fileName)) > 0;
+}
 
 } // end namespace itk

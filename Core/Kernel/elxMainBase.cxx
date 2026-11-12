@@ -31,6 +31,7 @@
 #include "elxConversion.h"
 
 #include "elxMacro.h"
+#include "itkFileMappedImageContainer.h"
 #include "itkMultiThreaderBase.h"
 
 #ifdef ELASTIX_USE_OPENCL
@@ -243,8 +244,13 @@ MainBase::TryLoadComponentPlugin(const ComponentDescriptionType & componentName)
 } // TryLoadComponentPlugin()
 
 MainBase::ObjectPointer
-MainBase::CreateComponent(const ComponentDescriptionType & name)
+MainBase::CreateComponent(const ComponentDescriptionType & requested)
 {
+  // Out of core an interpolation keeps its coefficients in the pixel type of the image: half
+  // the double ones, and the image itself at order 0 or 1.
+  const ComponentDescriptionType name =
+    requested == "BSplineInterpolator" && !itk::FileMappedScratch::Directory().empty() ? "BSplineInterpolatorFloat"
+                                                                                       : requested;
 
   /** 1) Try to create the component from the already installed database. */
   if (const PtrToCreator creator = GetComponentDatabase().GetCreator(name, m_DBIndex))

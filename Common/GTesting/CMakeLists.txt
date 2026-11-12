@@ -12,6 +12,9 @@ set(ELX_COMMON_GTEST_SOURCES
   itkAdvancedMeanSquaresImageToImageMetricGTest.cxx
   itkComputeImageExtremaFilterGTest.cxx
   itkCorrespondingPointsEuclideanDistancePointMetricGTest.cxx
+  itkFileMappedImageContainerGTest.cxx
+  itkFrugalBSplineInterpolateImageFunctionGTest.cxx
+  itkFrugalDiscreteGaussianImageFilterGTest.cxx
   itkGridScheduleComputerGTest.cxx
   itkImageFileCastWriterGTest.cxx
   itkImageFullSamplerGTest.cxx
@@ -22,6 +25,7 @@ set(ELX_COMMON_GTEST_SOURCES
   itkImageSamplerGTest.cxx
   itkParameterMapInterfaceTest.cxx
   itkParzenWindowHistogramImageToImageMetricGTest.cxx
+  itkStreamedRecursivePyramidImageFilterGTest.cxx
 )
 
 if(USE_ImpactMetric)

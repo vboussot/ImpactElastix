@@ -37,6 +37,8 @@
 #include "elxlog.h"
 
 // ITK header files:
+#include "itkFileMappedImageContainer.h"
+
 #include <itkChangeInformationImageFilter.h>
 #include <itkDataObject.h>
 #include <itkImageFileReader.h>
@@ -455,7 +457,11 @@ protected:
         /** Do the reading. */
         try
         {
-          const auto image = itk::ReadImage<TImage>(fileName);
+          auto image = itk::MapImageFile<TImage>(fileName);
+          if (image == nullptr)
+          {
+            image = itk::ReadImage<TImage>(fileName);
+          }
           infoChanger->SetInput(image);
           infoChanger->Update();
 

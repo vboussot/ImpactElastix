@@ -19,7 +19,7 @@
 #define elxMovingRecursivePyramid_h
 
 #include "elxIncludes.h" // include first to avoid MSVS warning
-#include "itkRecursiveMultiResolutionPyramidImageFilter.h"
+#include "itkStreamedRecursivePyramidImageFilter.h"
 
 namespace elastix
 {
@@ -37,8 +37,8 @@ namespace elastix
 
 template <typename TElastix>
 class ITK_TEMPLATE_EXPORT MovingRecursivePyramid
-  : public itk::RecursiveMultiResolutionPyramidImageFilter<typename MovingImagePyramidBase<TElastix>::InputImageType,
-                                                           typename MovingImagePyramidBase<TElastix>::OutputImageType>
+  : public itk::StreamedRecursivePyramidImageFilter<typename MovingImagePyramidBase<TElastix>::InputImageType,
+                                                    typename MovingImagePyramidBase<TElastix>::OutputImageType>
   , public MovingImagePyramidBase<TElastix>
 {
 public:
@@ -47,8 +47,8 @@ public:
   /** Standard ITK. */
   using Self = MovingRecursivePyramid;
   using Superclass1 =
-    itk::RecursiveMultiResolutionPyramidImageFilter<typename MovingImagePyramidBase<TElastix>::InputImageType,
-                                                    typename MovingImagePyramidBase<TElastix>::OutputImageType>;
+    itk::StreamedRecursivePyramidImageFilter<typename MovingImagePyramidBase<TElastix>::InputImageType,
+                                             typename MovingImagePyramidBase<TElastix>::OutputImageType>;
   using Superclass2 = MovingImagePyramidBase<TElastix>;
   using Pointer = itk::SmartPointer<Self>;
   using ConstPointer = itk::SmartPointer<const Self>;

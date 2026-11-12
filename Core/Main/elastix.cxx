@@ -22,6 +22,8 @@
 #include "elxElastixMain.h"
 #include "elxMainExeUtilities.h"
 #include <Core/elxVersionMacros.h>
+#include "itkFileMappedImageContainer.h"
+#include "itkStreamedRecursivePyramidImageFilter.h"
 #include "itkUseMevisDicomTiff.h"
 
 // ITK header files:
@@ -30,6 +32,7 @@
 #include <itksys/SystemTools.hxx>
 
 // Standard C++ header files:
+#include <algorithm>
 #include <cassert>
 #include <climits> // For UINT_MAX.
 #include <cstddef> // For size_t.
@@ -67,7 +70,10 @@ constexpr const char * elastixHelpText =
   "  -loglevel set the log level to \"off\", \"error\", \"warning\", or \"info\" (default),\n"
   "  -priority set the process priority to high, abovenormal, normal (default),\n"
   "            belownormal, or idle (Windows only option)\n"
-  "  -threads  set the maximum number of threads of elastix\n\n"
+  "  -threads  set the maximum number of threads of elastix\n"
+  "  -outofcore  keep the images of the registration (with their pyramids and interpolation\n"
+  "            coefficients) in files of the output directory, paged in by the system: for\n"
+  "            images larger than the memory. Takes no value.\n\n"
 
   /** The parameter file.*/
   "The parameter-file must contain all the information "
@@ -93,6 +99,13 @@ main(int argc, char ** argv)
 #ifdef _MSC_VER
     SetConsoleOutputCP(CP_UTF8);
 #endif
+
+    /** -outofcore takes no value: it leaves the key-value pairs the arguments are read as. */
+    char ** const argumentsEnd = std::remove_if(
+      argv + 1, argv + argc, [](const char * argument) { return std::string(argument) == "-outofcore"; });
+    const bool outOfCore = argumentsEnd != argv + argc;
+    argc = static_cast<int>(argumentsEnd - argv);
+    argv[argc] = nullptr;
 
     /** Check if "--help" or "--version" was asked for. */
     if (argc == 1)
@@ -244,6 +257,19 @@ main(int argc, char ** argv)
     {
       return returndummy;
     }
+
+    /** With -outofcore, the images allocated from here on keep their buffers in files of the output directory. */
+    if (outOfCore)
+    {
+      itk::FileMappedImageContainerFactory::MapImagesFrom(outFolder);
+      elx::log::info("-outofcore: the images are kept in files of the output directory, paged in by the system.");
+    }
+
+    /** The images of a run are those of its files, and each parameter file computes the same pyramids of them:
+     * they are kept from one to the next. Out of core they are computed a piece at a time.
+     */
+    itk::StreamedRecursivePyramidOptions::KeepsLevels() = true;
+    itk::StreamedRecursivePyramidOptions::InPieces() = outOfCore;
 
     elx::log::info("");
 
