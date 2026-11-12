@@ -203,7 +203,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
       numberOfOwners,
       [&](const SizeValueType owner) {
         JacobianType               jacj(prevjacj);
-        NonZeroJacobianIndicesType jacind(sizejacind);
+        NonZeroJacobianIndicesType nzji(sizejacind);
         /** The indices of no sample: the first sample starts a sum. */
         NonZeroJacobianIndicesType prevjacind(sizejacind, numberOfParameters);
 
@@ -245,10 +245,10 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
         {
           /** Read fixed coordinates and get Jacobian J_j. */
           const FixedImagePointType & point = sample.m_ImageCoordinates;
-          m_Transform->GetJacobian(point, jacj, jacind);
+          m_Transform->GetJacobian(point, jacj, nzji);
 
           /** Skip invalid Jacobians in the beginning, if any. */
-          if (sizejacind > 1 && jacind[0] == jacind[1])
+          if (sizejacind > 1 && nzji[0] == nzji[1])
           {
             continue;
           }
@@ -256,15 +256,15 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
           /** With the indices of the sample before, J_j^T J_j adds to the sum; with others, the sum goes
            * to the covariance matrix and starts again.
            */
-          const bool sameIndices = jacind == prevjacind;
+          const bool sameIndices = nzji == prevjacind;
           if (!sameIndices)
           {
             updateCovariance();
-            prevjacind = jacind;
+            prevjacind = nzji;
             own.clear();
             for (unsigned int pi = 0; pi < sizejacind; ++pi)
             {
-              if (static_cast<unsigned int>(jacind[pi]) % static_cast<unsigned int>(numberOfOwners) == owner)
+              if (static_cast<unsigned int>(nzji[pi]) % static_cast<unsigned int>(numberOfOwners) == owner)
               {
                 own.push_back(pi);
               }
@@ -275,7 +275,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
             double * const row = jactjac[pi];
             for (unsigned int qi = 0; qi < sizejacind; ++qi)
             {
-              if (jacind[qi] >= jacind[pi])
+              if (nzji[qi] >= nzji[pi])
               {
                 /** An element of J_j^T J_j, summed over the rows of J_j as vnl_fastops sums it. */
                 double accum = 0;
@@ -371,16 +371,16 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
    * threads, each with its own workspace. A thread walks the samples before its own for the
    * Jacobian they leave.
    */
-  const auto                threader = MultiThreaderBase::New();
-  const SizeValueType       numberOfChunks = threader->GetNumberOfWorkUnits();
-  std::vector<double>       maxJJOfChunk(numberOfChunks, 0.0);
-  std::vector<double>       maxJCJOfChunk(numberOfChunks, 0.0);
+  const auto          threader = MultiThreaderBase::New();
+  const SizeValueType numberOfChunks = threader->GetNumberOfWorkUnits();
+  std::vector<double> maxJJOfChunk(numberOfChunks, 0.0);
+  std::vector<double> maxJCJOfChunk(numberOfChunks, 0.0);
   threader->ParallelizeArray(
     0,
     numberOfChunks,
     [&](const SizeValueType chunk) {
       JacobianType               jacj(prevjacjOfMaxima);
-      NonZeroJacobianIndicesType jacind(sizejacind);
+      NonZeroJacobianIndicesType nzji(sizejacind);
       JacobianType               jacjjacj(outdim, outdim);
       JacobianType               jacjcov(outdim, sizejacind);
       DiagCovarianceMatrixType   diagcovsparse(sizejacind);
@@ -398,14 +398,14 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
       {
         /** Read fixed coordinates and get Jacobian. */
         const FixedImagePointType & point = samples[s].m_ImageCoordinates;
-        m_Transform->GetJacobian(point, jacj, jacind);
+        m_Transform->GetJacobian(point, jacj, nzji);
 
         /** Apply scales, if necessary. */
         if (m_UseScales)
         {
           for (unsigned int pi = 0; pi < sizejacind; ++pi)
           {
-            const unsigned int p = jacind[pi];
+            const unsigned int p = nzji[pi];
             jacj.scale_column(pi, 1.0 / m_Scales[p]);
           }
         }
@@ -435,7 +435,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
          */
         for (unsigned int pi = 0; pi < sizejacind; ++pi)
         {
-          const unsigned int p = jacind[pi];
+          const unsigned int p = nzji[pi];
           jacindExpanded[p] = pi;
           diagcovsparse[pi] = diagcov[p];
         }
@@ -448,7 +448,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
         for (unsigned int pi = 0; pi < sizejacind; ++pi)
         {
           /** Loop over row of the sparse cov matrix. */
-          for (const auto & covRowEntry : cov.get_row(jacind[pi]))
+          for (const auto & covRowEntry : cov.get_row(nzji[pi]))
           {
             const unsigned int q = covRowEntry.first;
             const unsigned int qi = jacindExpanded[q];
@@ -468,7 +468,7 @@ ComputeJacobianTerms<TFixedImage, TTransform>::Compute() const -> Terms
         /** The indices of this sample leave the expanded format: only they were set. */
         for (unsigned int pi = 0; pi < sizejacind; ++pi)
         {
-          jacindExpanded[jacind[pi]] = sizejacind;
+          jacindExpanded[nzji[pi]] = sizejacind;
         }
 
         /** J_j C J_j^T  = jacjCjacj.

@@ -101,10 +101,10 @@ main(int argc, char ** argv)
 #endif
 
     /** -outofcore takes no value: it leaves the key-value pairs the arguments are read as. */
-    char ** const last = std::remove_if(
+    char ** const argumentsEnd = std::remove_if(
       argv + 1, argv + argc, [](const char * argument) { return std::string(argument) == "-outofcore"; });
-    const bool outOfCore = last != argv + argc;
-    argc = static_cast<int>(last - argv);
+    const bool outOfCore = argumentsEnd != argv + argc;
+    argc = static_cast<int>(argumentsEnd - argv);
     argv[argc] = nullptr;
 
     /** Check if "--help" or "--version" was asked for. */
