@@ -74,9 +74,9 @@ public:
     // Mappings are POSIX ones: Windows would take CreateFileMapping and MapViewOfFile.
     itkGenericExceptionMacro("Images mapped from files are not available on Windows.");
 #else
-    std::string  path = Directory() + "/elastix_image_XXXXXX";
-    const int    descriptor = mkstemp(path.data());
-    const auto   fail = [&](const char * const what) {
+    std::string path = Directory() + "/elastix_image_XXXXXX";
+    const int   descriptor = mkstemp(path.data());
+    const auto  fail = [&](const char * const what) {
       const std::string reason = std::strerror(errno);
       if (descriptor >= 0)
       {

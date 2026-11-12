@@ -270,27 +270,27 @@ protected:
   mutable DerivativeType m_PerturbedAlphaLeft{};
 
   /** Variables for the pdfs (actually: histograms). */
-  mutable MarginalPDFType       m_FixedImageMarginalPDF{};
+  mutable MarginalPDFType m_FixedImageMarginalPDF{};
 
   /** Where the transform sends each sample: kept by the multi-threaded ComputePDFs() for a pass over
    * the same samples with the same parameters, as the one that computes the derivative; empty otherwise.
    */
   mutable std::vector<MovingImagePointType> m_MappedPoints{};
-  mutable MarginalPDFType       m_MovingImageMarginalPDF{};
-  JointPDFPointer               m_JointPDF{ nullptr };
-  JointPDFDerivativesPointer    m_JointPDFDerivatives{ nullptr };
-  JointPDFDerivativesPointer    m_IncrementalJointPDFRight{};
-  JointPDFDerivativesPointer    m_IncrementalJointPDFLeft{};
-  IncrementalMarginalPDFPointer m_FixedIncrementalMarginalPDFRight{ nullptr };
-  IncrementalMarginalPDFPointer m_MovingIncrementalMarginalPDFRight{ nullptr };
-  IncrementalMarginalPDFPointer m_FixedIncrementalMarginalPDFLeft{ nullptr };
-  IncrementalMarginalPDFPointer m_MovingIncrementalMarginalPDFLeft{ nullptr };
-  double                        m_MovingImageNormalizedMin{ 0.0 };
-  double                        m_FixedImageNormalizedMin{ 0.0 };
-  double                        m_FixedImageBinSize{ 0.0 };
-  double                        m_MovingImageBinSize{ 0.0 };
-  double                        m_FixedParzenTermToIndexOffset{ 0.5 };
-  double                        m_MovingParzenTermToIndexOffset{ -1.0 };
+  mutable MarginalPDFType                   m_MovingImageMarginalPDF{};
+  JointPDFPointer                           m_JointPDF{ nullptr };
+  JointPDFDerivativesPointer                m_JointPDFDerivatives{ nullptr };
+  JointPDFDerivativesPointer                m_IncrementalJointPDFRight{};
+  JointPDFDerivativesPointer                m_IncrementalJointPDFLeft{};
+  IncrementalMarginalPDFPointer             m_FixedIncrementalMarginalPDFRight{ nullptr };
+  IncrementalMarginalPDFPointer             m_MovingIncrementalMarginalPDFRight{ nullptr };
+  IncrementalMarginalPDFPointer             m_FixedIncrementalMarginalPDFLeft{ nullptr };
+  IncrementalMarginalPDFPointer             m_MovingIncrementalMarginalPDFLeft{ nullptr };
+  double                                    m_MovingImageNormalizedMin{ 0.0 };
+  double                                    m_FixedImageNormalizedMin{ 0.0 };
+  double                                    m_FixedImageBinSize{ 0.0 };
+  double                                    m_MovingImageBinSize{ 0.0 };
+  double                                    m_FixedParzenTermToIndexOffset{ 0.5 };
+  double                                    m_MovingParzenTermToIndexOffset{ -1.0 };
 
   /** Kernels for computing Parzen histograms and derivatives. */
   KernelFunctionPointer m_FixedKernel{ nullptr };

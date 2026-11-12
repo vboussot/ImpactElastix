@@ -79,7 +79,8 @@ GTEST_TEST(StreamedRecursivePyramidImageFilter, HasTheLevelsOfTheItkFilter)
 }
 
 
-// Asked to keep them, a pyramid takes the smaller levels of the pyramid of the image before, until the image is modified.
+// Asked to keep them, a pyramid takes the smaller levels of the pyramid of the image before, until the image is
+// modified.
 GTEST_TEST(StreamedRecursivePyramidImageFilter, KeepsTheLevelsOfAnImage)
 {
   using ImageType = itk::Image<float, 3>;

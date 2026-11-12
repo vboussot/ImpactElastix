@@ -104,7 +104,8 @@ protected:
     bool         whole = this->IsScheduleDownwardDivisible(schedule);
     for (int level = 0; level < numberOfLevels; ++level)
     {
-      whole = whole && this->GetOutput(level)->GetRequestedRegion() == this->GetOutput(level)->GetLargestPossibleRegion();
+      whole =
+        whole && this->GetOutput(level)->GetRequestedRegion() == this->GetOutput(level)->GetLargestPossibleRegion();
     }
     if (!whole)
     {
@@ -113,7 +114,7 @@ protected:
     }
 
     // The levels kept from the pyramid of this image, if it had this schedule.
-    const TInputImage * const         input = this->GetInput();
+    const TInputImage * const    input = this->GetInput();
     const bool                   keeps = StreamedRecursivePyramidOptions::KeepsLevels();
     std::unique_lock<std::mutex> lock(Mutex(), std::defer_lock);
     const Levels *               kept = nullptr;
@@ -188,9 +189,8 @@ protected:
         {
           const auto streamer = StreamingImageFilter<TOutputImage, TOutputImage>::New();
           streamer->SetInput(shrinker->GetOutput());
-          streamer->SetNumberOfStreamDivisions(
-            1 + source->GetLargestPossibleRegion().GetNumberOfPixels() * sizeof(typename TOutputImage::PixelType) /
-                  PieceSize);
+          streamer->SetNumberOfStreamDivisions(1 + source->GetLargestPossibleRegion().GetNumberOfPixels() *
+                                                     sizeof(typename TOutputImage::PixelType) / PieceSize);
           last = streamer;
         }
         // The update leaves the region it asked for requested from the source, which may be the input.

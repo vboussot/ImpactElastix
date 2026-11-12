@@ -81,7 +81,7 @@ GTEST_TEST(FrugalBSplineInterpolateImageFunction, HasTheValuesOfTheItkFunction)
         index[0] = std::min(index[0] + 0.37, 39.0);
         index[1] = std::min(index[1] + 0.61, 11.0);
         index[2] -= 0.45; // before the first pixel too
-        double                           expectedValue, actualValue;
+        double                          expectedValue, actualValue;
         itk::CovariantVector<double, 3> expectedDerivative, actualDerivative;
         expected->EvaluateValueAndDerivativeAtContinuousIndex(index, expectedValue, expectedDerivative);
         actual->EvaluateValueAndDerivativeAtContinuousIndex(index, actualValue, actualDerivative);

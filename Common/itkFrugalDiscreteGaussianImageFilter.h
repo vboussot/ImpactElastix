@@ -116,7 +116,8 @@ protected:
     std::vector<PixelType> scratch[2];
 
     // A few slices at a time, for what an axis leaves for the next to stay in the cache.
-    const SizeValueType pixelsPerSlice = outputRegionForThread.GetNumberOfPixels() / outputRegionForThread.GetSize(last);
+    const SizeValueType pixelsPerSlice =
+      outputRegionForThread.GetNumberOfPixels() / outputRegionForThread.GetSize(last);
     const SizeValueType slicesPerSlab = std::max<SizeValueType>((SizeValueType{ 1 } << 18) / pixelsPerSlice, 1);
     for (SizeValueType first = 0; first < outputRegionForThread.GetSize(last); first += slicesPerSlab)
     {

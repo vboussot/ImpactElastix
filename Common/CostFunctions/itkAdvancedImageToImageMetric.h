@@ -655,13 +655,13 @@ private:
                                                             const TOptionalThreadId... optionalThreadId) const;
 
   /** Private member variables for limiters and for image derivative computation. */
-  FixedImageLimiterPointer          m_FixedImageLimiter{ nullptr };
-  MovingImageLimiterPointer         m_MovingImageLimiter{ nullptr };
-  LinearInterpolatorPointer         m_LinearInterpolator{ nullptr };
-  BSplineInterpolatorPointer        m_BSplineInterpolator{ nullptr };
-  BSplineInterpolatorFloatPointer   m_BSplineInterpolatorFloat{ nullptr };
+  FixedImageLimiterPointer        m_FixedImageLimiter{ nullptr };
+  MovingImageLimiterPointer       m_MovingImageLimiter{ nullptr };
+  LinearInterpolatorPointer       m_LinearInterpolator{ nullptr };
+  BSplineInterpolatorPointer      m_BSplineInterpolator{ nullptr };
+  BSplineInterpolatorFloatPointer m_BSplineInterpolatorFloat{ nullptr };
   const FrugalBSplineInterpolateImageFunction<MovingImageType, CoordinateRepresentationType, double> *
-    m_FrugalBSplineInterpolator{ nullptr };
+                                    m_FrugalBSplineInterpolator{ nullptr };
   ReducedBSplineInterpolatorPointer m_ReducedBSplineInterpolator{ nullptr };
 
   /** Other private member variables. */

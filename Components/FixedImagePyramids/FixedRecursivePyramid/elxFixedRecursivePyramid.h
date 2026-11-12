@@ -38,7 +38,7 @@ namespace elastix
 template <typename TElastix>
 class ITK_TEMPLATE_EXPORT FixedRecursivePyramid
   : public itk::StreamedRecursivePyramidImageFilter<typename FixedImagePyramidBase<TElastix>::InputImageType,
-                                                           typename FixedImagePyramidBase<TElastix>::OutputImageType>
+                                                    typename FixedImagePyramidBase<TElastix>::OutputImageType>
   , public FixedImagePyramidBase<TElastix>
 {
 public:
@@ -48,7 +48,7 @@ public:
   using Self = FixedRecursivePyramid;
   using Superclass1 =
     itk::StreamedRecursivePyramidImageFilter<typename FixedImagePyramidBase<TElastix>::InputImageType,
-                                                    typename FixedImagePyramidBase<TElastix>::OutputImageType>;
+                                             typename FixedImagePyramidBase<TElastix>::OutputImageType>;
   using Superclass2 = FixedImagePyramidBase<TElastix>;
   using Pointer = itk::SmartPointer<Self>;
   using ConstPointer = itk::SmartPointer<const Self>;

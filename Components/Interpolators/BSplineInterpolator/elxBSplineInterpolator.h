@@ -49,8 +49,8 @@ namespace elastix
 template <typename TElastix>
 class ITK_TEMPLATE_EXPORT BSplineInterpolator
   : public itk::FrugalBSplineInterpolateImageFunction<typename InterpolatorBase<TElastix>::InputImageType,
-                                                typename InterpolatorBase<TElastix>::CoordinateType,
-                                                double>
+                                                      typename InterpolatorBase<TElastix>::CoordinateType,
+                                                      double>
   , // CoefficientType
     public InterpolatorBase<TElastix>
 {
@@ -60,8 +60,8 @@ public:
   /** Standard ITK-stuff. */
   using Self = BSplineInterpolator;
   using Superclass1 = itk::FrugalBSplineInterpolateImageFunction<typename InterpolatorBase<TElastix>::InputImageType,
-                                                           typename InterpolatorBase<TElastix>::CoordinateType,
-                                                           double>;
+                                                                 typename InterpolatorBase<TElastix>::CoordinateType,
+                                                                 double>;
   using Superclass2 = InterpolatorBase<TElastix>;
   using Pointer = itk::SmartPointer<Self>;
   using ConstPointer = itk::SmartPointer<const Self>;

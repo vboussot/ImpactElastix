@@ -69,8 +69,8 @@ public:
   SetInputImage(const TImageType * inputData) override
   {
     const Object * const pixels = inputData == nullptr ? nullptr : inputData->GetPixelContainer();
-    const bool           pixelsAreCoefficients = std::is_same_v<TImageType, CoefficientImageType> && pixels != nullptr &&
-                                       this->GetSplineOrder() <= 1;
+    const bool           pixelsAreCoefficients =
+      std::is_same_v<TImageType, CoefficientImageType> && pixels != nullptr && this->GetSplineOrder() <= 1;
     if (pixelsAreCoefficients)
     {
       if constexpr (std::is_same_v<TImageType, CoefficientImageType>)
