@@ -61,7 +61,7 @@ RandomImage(const unsigned int seed)
 
 // The values and the derivatives are those of the ITK function at each order and around each pixel, asked for
 // apart and together, with the coefficients in the pixel type of the image, which are the pixels themselves at
-// order 0 and 1, and in double precision.
+// order 0 and 1, and in double precision, which at order 1 are the pixels too, read and widened.
 GTEST_TEST(FrugalBSplineInterpolateImageFunction, HasTheValuesOfTheItkFunction)
 {
   const auto image = RandomImage(1);

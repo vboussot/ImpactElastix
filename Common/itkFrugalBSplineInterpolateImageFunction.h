@@ -69,13 +69,22 @@ public:
   SetInputImage(const TImageType * inputData) override
   {
     const Object * const pixels = inputData == nullptr ? nullptr : inputData->GetPixelContainer();
-    const bool           pixelsAreCoefficients =
-      std::is_same_v<TImageType, CoefficientImageType> && pixels != nullptr && this->GetSplineOrder() <= 1;
+    constexpr bool       sameType = std::is_same_v<TImageType, CoefficientImageType>;
+    // At order 1 the coefficients are the pixels whatever their type: read where they lie, a pixel widens to its
+    // coefficient type without rounding (a float to a double), as the cast copy would hold it.
+    const bool pixelsAreCoefficients =
+      pixels != nullptr && (sameType ? this->GetSplineOrder() <= 1 : this->GetSplineOrder() == 1);
+    m_Pixels = nullptr;
     if (pixelsAreCoefficients)
     {
-      if constexpr (std::is_same_v<TImageType, CoefficientImageType>)
+      if constexpr (sameType)
       {
         this->m_Coefficients = inputData;
+      }
+      else
+      {
+        this->m_Coefficients = nullptr;
+        m_Pixels = inputData;
       }
       m_DecomposedPixels = nullptr;
     }
@@ -109,10 +118,11 @@ public:
   {
 #if defined(__GNUC__)
     constexpr unsigned int        Dimension = Superclass::ImageDimension;
-    const CoefficientImageType &  image = *this->m_Coefficients;
+    const ImageBase<Dimension> &  image = this->CoefficientsImage();
     const auto &                  region = image.GetBufferedRegion();
     const OffsetValueType * const strides = image.GetOffsetTable();
-    const auto * const            buffer = image.GetBufferPointer();
+    const char * const            buffer = this->CoefficientsBuffer();
+    const std::size_t             bytes = this->CoefficientBytes();
     const unsigned int            order = this->m_SplineOrder;
     // The offset along an axis of a position of the support, kept inside the buffer wherever the point is.
     const auto offset = [&](const unsigned int n, const unsigned int k) {
@@ -129,8 +139,8 @@ public:
       {
         line += offset(n, position[n]);
       }
-      __builtin_prefetch(buffer + line + offset(0, 0));
-      __builtin_prefetch(buffer + line + offset(0, order));
+      __builtin_prefetch(buffer + (line + offset(0, 0)) * bytes);
+      __builtin_prefetch(buffer + (line + offset(0, order)) * bytes);
       unsigned int n = 1;
       while (n < Dimension && ++position[n] > order)
       {
@@ -190,6 +200,23 @@ protected:
     }
   }
 
+  CovariantVectorType
+  EvaluateDerivativeAtContinuousIndexInternal(const ContinuousIndexType & x,
+                                              vnl_matrix<long> &          evaluateIndex,
+                                              vnl_matrix<double> &        weights,
+                                              vnl_matrix<double> &        weightsDerivative) const override
+  {
+    if (m_Pixels == nullptr)
+    {
+      return Superclass::EvaluateDerivativeAtContinuousIndexInternal(x, evaluateIndex, weights, weightsDerivative);
+    }
+    // The superclass reads the coefficient image, which the pixels stand in for (order 1).
+    OutputType          value;
+    CovariantVectorType derivative;
+    this->template ValueAndDerivative<1>(x, value, derivative);
+    return derivative;
+  }
+
 private:
   /** What the superclass computes around a continuous index at order 1 or 3: the weights of each
    * axis, those of its derivative, and the coefficients of the points of the support, the first
@@ -219,7 +246,7 @@ private:
     Support(const Self & function, const ContinuousIndexType & x)
     {
       static_assert(VOrder == 1 || VOrder == 3);
-      const CoefficientImageType &  image = *function.m_Coefficients;
+      const ImageBase<Dimension> &  image = function.CoefficientsImage();
       const auto &                  startIndex = function.GetStartIndex();
       const auto &                  endIndex = function.GetEndIndex();
       const auto &                  bufferIndex = image.GetBufferedRegion().GetIndex();
@@ -273,7 +300,20 @@ private:
           offsets[n][k] = (index - bufferIndex[n]) * strides[n];
         }
       }
-      const auto * const buffer = image.GetBufferPointer();
+      if (function.m_Pixels != nullptr)
+      {
+        this->Read(function.m_Pixels->GetBufferPointer(), offsets);
+      }
+      else
+      {
+        this->Read(function.m_Coefficients->GetBufferPointer(), offsets);
+      }
+    }
+
+    template <typename TPixel>
+    void
+    Read(const TPixel * const buffer, const OffsetValueType (&offsets)[Dimension][Length])
+    {
       for (unsigned int p = 0; p < NumberOfPoints; ++p)
       {
         OffsetValueType offset = 0;
@@ -285,6 +325,31 @@ private:
       }
     }
   };
+
+  /** The image the coefficients are read from: the pixels themselves (m_Pixels), or the coefficient image. */
+  const ImageBase<Superclass::ImageDimension> &
+  CoefficientsImage() const
+  {
+    if (m_Pixels != nullptr)
+    {
+      return *m_Pixels;
+    }
+    return *this->m_Coefficients;
+  }
+
+  const char *
+  CoefficientsBuffer() const
+  {
+    return m_Pixels != nullptr ? reinterpret_cast<const char *>(m_Pixels->GetBufferPointer())
+                               : reinterpret_cast<const char *>(this->m_Coefficients->GetBufferPointer());
+  }
+
+  std::size_t
+  CoefficientBytes() const
+  {
+    return m_Pixels != nullptr ? sizeof(typename TImageType::PixelType)
+                               : sizeof(typename CoefficientImageType::PixelType);
+  }
 
   /** The value at a continuous index, summed as the superclass sums it. */
   template <unsigned int VOrder>
@@ -476,6 +541,9 @@ private:
 
   /** The modification time of the image set: the same image, modified since, has other pixels. */
   ModifiedTimeType m_InputTime{};
+
+  /** The image set, when its own pixels are the coefficients of another type (order 1); held by the superclass. */
+  const TImageType * m_Pixels{};
 };
 
 } // end namespace itk
