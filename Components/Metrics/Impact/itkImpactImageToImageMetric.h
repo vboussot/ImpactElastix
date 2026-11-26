@@ -25,8 +25,8 @@
 // B-spline interpolation as the former local itkBSplineInterpolateVectorImageFunction).
 #include "itkInterpolateVectorImageFunction.h"
 #include "itkImpactModelConfiguration.h"
-// Static feature-map generation (itk::ImageToFeaturesMap) and online inference
-// (itk::Impact::GenerateOutputs/AndJacobian) are consumed from the ITKIMPACT backend.
+// Static feature-map generation (itk::ImageToFeaturesMap) and online evaluation
+// (itk::Impact::EvaluateOnline) are consumed from the ITKIMPACT backend.
 #include "itkImageToFeaturesMap.h"
 #include "itkImpactOnlineInference.h"
 #include <ImpactLoss.h>
@@ -37,7 +37,6 @@
 
 #include <string>
 #include <vector>
-#include <random>
 
 namespace itk
 {
@@ -168,6 +167,12 @@ public:
   void
   Initialize() override;
 
+  /** Draws, with the samples, the feature channels that every point of this evaluation compares
+   * (ImpactSubsetFeatures). They come from elastix's generator, which RandomSeed seeds, and are drawn here, outside
+   * the threads, so that they do not depend on the number of threads. */
+  void
+  BeforeThreadedGetValueAndDerivative(const ParametersType & parameters) const override;
+
   /** Set/Get the list of TorchScript model configurations used to extract features from the fixed image.
    * Each model can target a different resolution, architecture, or semantic level.
    */
@@ -241,11 +246,6 @@ public:
   itkSetMacro(CurrentLevel, unsigned int);
   itkGetConstMacro(CurrentLevel, unsigned int);
 
-  /** Set/Get the manual seed
-   */
-  itkSetMacro(Seed, unsigned int);
-  itkGetConstMacro(Seed, unsigned int);
-
   /** Set/Get how often (in number of optimizer iterations) the feature maps should be updated.
    * A value of 0 disables updates (useful in static mode). Positive values enable periodic refreshes.
    */
@@ -294,19 +294,10 @@ protected:
     std::vector<float>                              m_LayersWeight;
     SizeValueType                                   m_NumberOfPixelsCounted;
     int                                             m_NumberOfParameters;
-    std::mt19937                                    m_RandomGenerator;
 
     void
-    init(std::vector<std::string> distanceName, std::vector<float> layersWeight, unsigned int seed)
+    init(std::vector<std::string> distanceName, std::vector<float> layersWeight)
     {
-      if (seed > 0)
-      {
-        m_RandomGenerator = std::mt19937(seed);
-      }
-      else
-      {
-        m_RandomGenerator = std::mt19937(time(nullptr));
-      }
       m_LayersWeight = layersWeight;
       for (std::string name : distanceName)
       {
@@ -357,12 +348,15 @@ protected:
       derivative.Fill(DerivativeValueType{});
       for (int l = 0; l < m_LayersWeight.size(); ++l)
       {
-        const double  factor = normalization ? normalization->Factor(l) : 1.0;
-        torch::Tensor d =
-          m_LayersWeight[l] * factor * m_Losses[l]->GetDerivative(static_cast<double>(m_NumberOfPixelsCounted));
+        const double        factor = normalization ? normalization->Factor(l) : 1.0;
+        const torch::Tensor d =
+          (m_LayersWeight[l] * factor * m_Losses[l]->GetDerivative(static_cast<double>(m_NumberOfPixelsCounted)))
+            .to(torch::kFloat64)
+            .contiguous();
+        const double * const values = d.data_ptr<double>();
         for (int i = 0; i < d.size(0); ++i)
         {
-          derivative[i] += d[i].item<float>();
+          derivative[i] += values[i];
         }
       }
       return derivative;
@@ -394,25 +388,6 @@ protected:
   using typename Superclass::BSplineInterpolatorType;
   using typename Superclass::MovingImageDerivativeType;
   using typename Superclass::NonZeroJacobianIndicesType;
-
-  /**
-   * \brief Checks if a patch centered at the given fixed image point is valid for sampling.
-   *
-   * This function verifies that a patch, defined by the `patchIndex`, centered at the given fixed image
-   * point, is valid for sampling. It ensures that all transformed points of the patch remain inside
-   * the domain of the moving image, or within the moving mask if one is defined.
-   * It is used to validate patches before they are processed in the similarity metric.
-   *
-   * \param fixedImageCenterCoordinate The center coordinate of the patch in the fixed image.
-   * \param patchIndex A layout of the patch, defining the indices of the region to sample around
-   *                   the fixed image point.
-   *
-   * \return `true` if the patch is valid for sampling, meaning all transformed points are inside the
-   *         moving image domain or mask; `false` otherwise.
-   */
-  bool
-  SampleCheck(const FixedImagePointType &             fixedImageCenterCoordinate,
-              const std::vector<std::vector<float>> & patchIndex) const;
 
   /** The direction cosines of the fixed image, cached by the caller so the hot patch loop does
    * not re-fetch them per voxel. */
@@ -511,24 +486,20 @@ protected:
   AfterThreadedGetValueAndDerivative(MeasureType & value, DerivativeType & derivative) const override;
 
   /**
-   * \brief Computes the semantic similarity value using the current transform parameters.
+   * \brief The Jacobian mode's evaluation: the loss over every sample into \p value, and its derivative into
+   * \p derivative unless it is null.
    *
-   * This method computes the loss at all sampled points using the current transformation parameters,
-   * without calculating derivatives. It performs patch-based inference and feature comparison in
-   * Jacobian mode.
-   *
-   * \param fixedPoints A vector of sampled points in the fixed image.
-   * \param loss The loss objects (one per layer) where the values will be accumulated.
-   *
-   * \return The number of valid samples used in the similarity computation.
+   * Every sample whose patches lie inside the moving image goes to itk::Impact::EvaluateOnline in one call: the
+   * models run on the threads' shares of them on the CPU, in batches as large as the device holds on a GPU, their
+   * patches cut by all the threads; a global loss (NCC, OrganDice) takes its exact derivative over all the samples.
    */
-  unsigned int
-  ComputeValue(const std::vector<FixedImagePointType> & fixedPoints, LossPerThreadStruct & loss) const;
+  void
+  EvaluateOnline(MeasureType & value, DerivativeType * derivative) const;
 
   /**
    * \brief Computes the semantic similarity value in static mode (using precomputed feature maps).
    *
-   * Unlike `ComputeValue()`, this method uses pre-extracted static feature maps for both the
+   * Unlike `EvaluateOnline()`, this method uses pre-extracted static feature maps for both the
    * fixed and moving images, avoiding repeated forward passes through the model
    *
    * \param fixedPoints A vector of sampled points in the fixed image.
@@ -538,22 +509,6 @@ protected:
    */
   unsigned int
   ComputeValueStatic(const std::vector<FixedImagePointType> & fixedPoints, LossPerThreadStruct & loss) const;
-
-  /**
-   * \brief Computes both the semantic similarity value and its derivative using Jacobian mode.
-   *
-   * This method computes both the similarity value and its derivative (gradient)
-   * by backpropagating through the model. This allows the metric to assess the sensitivity to
-   * transformation parameters, which is crucial for gradient-based optimization.
-   *
-   * \param fixedPoints A vector of sampled points in the fixed image.
-   * \param loss Loss objects to store both the values and gradients for each semantic layer.
-   *
-   * \return The number of valid samples used in the similarity and gradient computation.
-   */
-  unsigned int
-  ComputeValueAndDerivativeJacobian(const std::vector<FixedImagePointType> & fixedPoints,
-                                    LossPerThreadStruct &                    loss) const;
 
   /**
    * \brief Computes the value and derivative in static mode (using precomputed features).
@@ -625,99 +580,6 @@ private:
 
   using FeaturesMaps = typename ImpactImageToImageMetric<TFixedImage, TMovingImage>::FeaturesMaps;
 
-  /**
-   * \brief Extracts a fixed image patch tensor centered at a given point using the precomputed patch index.
-   *
-   * This method extracts a patch from the fixed image centered at the specified point,
-   * based on the provided `patchIndex` and `patchTensorShape`. Interpolation is performed using
-   * the fixed image interpolator to sample the feature values at the specified coordinates.
-   *
-   * \param fixedImageCenterCoordinate The coordinate of the center point of the patch in the fixed image.
-   * \param patchIndex A vector defining the relative indices for extracting the patch.
-   * \param patchTensorShape The shape the sampled patch must be given as a tensor. It is the
-   *   configured patch size REVERSED (itk::Impact::PatchTensorShape): the buffer below is
-   *   filled in patchIndex order, ITK axis 0 fastest, so ITK x is the tensor's last and
-   *   fastest axis. Reshaping that buffer to the un-reversed patch size re-partitions it,
-   *   which is invisible for an isotropic patch and garbles every other one.
-   *
-   * \return A tensor representing the extracted patch from the fixed image.
-   */
-  torch::Tensor
-  EvaluateFixedImagesPatchValue(const FixedImagePointType &             fixedImageCenterCoordinate,
-                                const std::vector<std::vector<float>> & patchIndex,
-                                const std::vector<int64_t> &            patchTensorShape) const;
-
-  /**
-   * \brief Extracts a moving image patch tensor (intensity values) corresponding to a fixed point.
-   *
-   * This method extracts a patch from the moving image, centered at the corresponding transformed
-   * point from the fixed image. The extraction is performed using the provided transform and
-   * the moving image interpolator to sample intensity values at the transformed coordinates.
-   *
-   * \param fixedImageCenterCoordinate The coordinate of the center point in the fixed image.
-   * \param patchIndex A 2D vector defining the relative indices for extracting the patch.
-   * \param patchTensorShape The shape the sampled patch must be given as a tensor. It is the
-   *   configured patch size REVERSED (itk::Impact::PatchTensorShape): the buffer below is
-   *   filled in patchIndex order, ITK axis 0 fastest, so ITK x is the tensor's last and
-   *   fastest axis. Reshaping that buffer to the un-reversed patch size re-partitions it,
-   *   which is invisible for an isotropic patch and garbles every other one.
-   *
-   * \return A tensor representing the extracted patch from the moving image.
-   */
-  torch::Tensor
-  EvaluateMovingImagesPatchValue(const FixedImagePointType &             fixedImageCenterCoordinate,
-                                 const std::vector<std::vector<float>> & patchIndex,
-                                 const std::vector<int64_t> &            patchTensorShape) const;
-
-  /**
-   * \brief Extracts moving image patch values and computes the spatial Jacobians with respect to image coordinates.
-   *
-   * This method extracts a patch from the moving image centered at the corresponding transformed
-   * point from the fixed image. It also computes the image gradient. This is used in Jacobian mode to enable
-   * gradient computation via the chain rule during optimization.
-   *
-   * \param fixedImageCenterCoordinate The coordinate of the center point in the fixed image.
-   * \param movingImagesPatchesJacobians A tensor to store the computed Jacobians (image gradients) for each patch.
-   * \param patchIndex A vector defining the relative indices for extracting the patch.
-   * \param patchTensorShape The shape the sampled patch must be given as a tensor. It is the
-   *   configured patch size REVERSED (itk::Impact::PatchTensorShape): the buffer below is
-   *   filled in patchIndex order, ITK axis 0 fastest, so ITK x is the tensor's last and
-   *   fastest axis. Reshaping that buffer to the un-reversed patch size re-partitions it,
-   *   which is invisible for an isotropic patch and garbles every other one.
-   * \param s An index to determine where to store the computed Jacobians in `movingImagesPatchesJacobians`.
-   *
-   * \return A tensor representing the extracted patch from the moving image.
-   */
-  torch::Tensor
-  EvaluateMovingImagesPatchValuesAndJacobians(const FixedImagePointType &             fixedImageCenterCoordinate,
-                                              torch::Tensor &                         movingImagesPatchesJacobians,
-                                              const std::vector<std::vector<float>> & patchIndex,
-                                              const std::vector<int64_t> &            patchTensorShape,
-                                              int                                     s) const;
-
-  /**
-   * \brief Generates valid patch indices and filters out invalid points.
-   *
-   * This method takes a list of fixed points and model configurations to generate patch indices
-   * for each point. It filters out points that lie outside the mask or image boundaries, returning
-   * only the valid fixed points. The valid patch indices are stored in `patchIndex`.
-   *
-   * A 2D model's patch lies on a plane drawn for each point from the metric's seed, the model and the point's index in
-   * the fixed image IMPACT samples its patches in (itk::Impact::GetPatchIndex), the plane itk-impact's ITKv4 metric
-   * and ImpactFineRegistration draw there.
-   *
-   * \param modelConfig A vector of model configurations, each specifying the properties of the models used.
-   * \param fixedPointsTmp A vector of fixed points to generate patch indices for.
-   * \param patchIndex A reference to a 4D vector to store the generated patch indices for each valid fixed point.
-   *
-   * \return A vector of valid fixed points that are inside the mask or boundaries of the image.
-   */
-  template <typename ImagePointType>
-  std::vector<ImagePointType>
-  GeneratePatchIndex(const std::vector<ImpactModelConfiguration> &               modelConfig,
-                     const std::vector<ImagePointType> &                         fixedPointsTmp,
-                     std::vector<std::vector<std::vector<std::vector<float>>>> & patchIndex) const;
-
   /** TorchScript model configurations for fixed and moving image feature extraction. */
   std::vector<ImpactModelConfiguration> m_FixedModelsConfiguration;
   std::vector<ImpactModelConfiguration> m_MovingModelsConfiguration;
@@ -749,7 +611,6 @@ private:
   torch::Device                          m_Device = torch::Device(torch::kCPU);
   bool                                   m_UseMixedPrecision;
   unsigned int                           m_CurrentLevel;
-  unsigned int                           m_Seed;
 
 
   std::vector<FeaturesMaps>  m_FixedFeaturesMaps;
@@ -757,6 +618,10 @@ private:
   std::vector<torch::Tensor> m_PrincipalComponents;
 
   std::vector<std::vector<unsigned int>> m_FeaturesIndexes;
+  /** The channels this evaluation compares, per layer (BeforeThreadedGetValueAndDerivative), and as index tensors on
+   * the device for the online modes. */
+  mutable std::vector<std::vector<unsigned int>> m_SubsetsOfFeatures;
+  mutable std::vector<torch::Tensor>             m_SubsetsOfFeaturesOnDevice;
 
 
   /**
@@ -768,22 +633,6 @@ private:
     interpolator->SetSplineOrder(3);
     return interpolator;
   }();
-
-  /**
-   * \brief Retrieves a subset of features based on the provided indices.
-   *
-   * This method selects a subset of features from the full set of features, based on the indices
-   * provided in `featuresIndex`. It uses a random number generator for sampling a subset of the
-   * features, ensuring that the selected features are randomly chosen.
-   *
-   * \param featuresIndex A vector of indices representing the features to be considered.
-   * \param randomGenerator A random number generator used for sampling the features.
-   * \param n The number of features to select from the provided list of indices.
-   *
-   * \return A vector containing the indices of the randomly selected features.
-   */
-  std::vector<unsigned int>
-  GetSubsetOfFeatures(const std::vector<unsigned int> & featuresIndex, std::mt19937 & randomGenerator, int n) const;
 
   /** Thread-safe wrapper for per-thread loss computation (padded to avoid false sharing). */
   itkPadStruct(ITK_CACHE_LINE_ALIGNMENT, LossPerThreadStruct, PaddedLossPerThreadStruct);

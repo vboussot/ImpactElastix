@@ -1044,6 +1044,28 @@ elx_add_test(TransformixFilterTest "" "Transformix"
 target_link_libraries(itkTransformixFilterTest PUBLIC elastix_lib transformix_lib)
 
 
+# With -out-of-core the images, their pyramids and the interpolation's coefficients are kept in files, the
+# coefficients in double at order 3 as in memory: the registration is the one in memory, to the bit.
+foreach(mode memory files)
+  set(outOfCore "")
+  if(mode STREQUAL "files")
+    set(outOfCore "-out-of-core")
+  endif()
+  elx_add_run_test(2DBrain.NC.bspline.ASGD.order3.${mode}
+    ""
+    -f ${ELASTIX_DOX_DIR}/exampleinput/fixed.mhd
+    -m ${ELASTIX_DOX_DIR}/exampleinput/moving.mhd
+    -p ${TestDataDir}/parameters.2D.NC.bspline.ASGD.order3.txt
+    ${outOfCore})
+endforeach()
+add_test(NAME elastix_run_2DBrain.NC.bspline.ASGD.order3_COMPARE_RUNS
+  COMMAND elxTransformParametersCompare
+  -base ${TestOutputDir}/elastix_run_2DBrain.NC.bspline.ASGD.order3.memory/TransformParameters.0.txt
+  -test ${TestOutputDir}/elastix_run_2DBrain.NC.bspline.ASGD.order3.files/TransformParameters.0.txt
+  -a 0)
+set_tests_properties(elastix_run_2DBrain.NC.bspline.ASGD.order3_COMPARE_RUNS
+  PROPERTIES DEPENDS "elastix_run_2DBrain.NC.bspline.ASGD.order3.memory_OUTPUT;elastix_run_2DBrain.NC.bspline.ASGD.order3.files_OUTPUT")
+
 if(USE_ImpactMetric)
   # Test Impact metric
   file(COPY ${TestDataDir}/M730_1_Layers.pt
@@ -1111,6 +1133,24 @@ if(USE_ImpactMetric)
     -m ${ELASTIX_DOX_DIR}/exampleinput/moving.mhd
     -p ${TestDataDir}/parameters.2D.IMPACT.bspline.ASGD.004.txt
     -threads 4)
+
+  # The same registration, comparing 2 of the 4 feature channels and without RandomSeed, run twice: the channels are
+  # drawn from elastix's generator, which RandomSeed seeds (121212 by default), so the two runs agree exactly.
+  foreach(run a b)
+    elx_add_run_test(2DBrain.IMPACT.translation.ASGD.004.${run}
+      ""
+      -f ${ELASTIX_DOX_DIR}/exampleinput/fixed.mhd
+      -m ${ELASTIX_DOX_DIR}/exampleinput/fixed.mhd
+      -t0 ${TestDataDir}/transformparameters.2D.translation.txt
+      -p ${TestDataDir}/parameters.2D.IMPACT.translation.ASGD.004.txt)
+  endforeach()
+  add_test(NAME elastix_run_2DBrain.IMPACT.translation.ASGD.004_COMPARE_RUNS
+    COMMAND elxTransformParametersCompare
+    -base ${TestOutputDir}/elastix_run_2DBrain.IMPACT.translation.ASGD.004.a/TransformParameters.0.txt
+    -test ${TestOutputDir}/elastix_run_2DBrain.IMPACT.translation.ASGD.004.b/TransformParameters.0.txt
+    -a 0)
+  set_tests_properties(elastix_run_2DBrain.IMPACT.translation.ASGD.004_COMPARE_RUNS
+    PROPERTIES DEPENDS "elastix_run_2DBrain.IMPACT.translation.ASGD.004.a_OUTPUT;elastix_run_2DBrain.IMPACT.translation.ASGD.004.b_OUTPUT")
 endif()
 
 add_subdirectory(PythonTests)
